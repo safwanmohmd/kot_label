@@ -1,0 +1,141 @@
+import { NavLink, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  PlusCircle,
+  Layers,
+  History,
+  Settings,
+  Package,
+  ScanLine,
+  Menu,
+  X,
+} from 'lucide-react';
+import { useState } from 'react';
+
+const NAV = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/create', label: 'Create Label', icon: PlusCircle },
+  { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
+  { to: '/history', label: 'Label History', icon: History },
+  { to: '/settings', label: 'Settings', icon: Settings },
+];
+
+export function AppShell({ children }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+
+  return (
+    <div className="min-h-screen bg-ink-50 flex">
+      <aside className="hidden lg:flex w-64 flex-col bg-ink-900 text-white no-print">
+        <SidebarContent />
+      </aside>
+
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 no-print">
+          <div
+            className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-ink-900 text-white flex flex-col animate-slide-in">
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="absolute top-4 right-4 text-ink-400 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </aside>
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-16 bg-white border-b border-ink-200 flex items-center justify-between px-4 lg:px-8 no-print">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden text-ink-600 hover:text-ink-900"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            <div>
+              <h1 className="text-base font-bold text-ink-900">
+                {NAV.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to) && n.to !== '/'))?.label ?? 'Dashboard'}
+              </h1>
+              <p className="text-xs text-ink-500 hidden sm:block">
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 text-xs text-ink-500">
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse-soft" />
+              System online
+            </div>
+            <div className="h-9 w-9 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm font-bold">
+              WH
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto p-4 lg:p-8">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent({ onNavigate }) {
+  return (
+    <>
+      <div className="h-16 flex items-center gap-2.5 px-5 border-b border-ink-800">
+        <div className="h-9 w-9 rounded-lg bg-brand-600 flex items-center justify-center">
+          <Package className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white">KOT</p>
+          <p className="text-[10px] text-ink-400 uppercase tracking-wider">Warehouse Edition</p>
+        </div>
+      </div>
+
+      <nav className="flex-1 py-4 px-3 space-y-1">
+        {NAV.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-brand-600 text-white'
+                    : 'text-ink-300 hover:bg-ink-800 hover:text-white'
+                }`
+              }
+            >
+              <Icon className="h-5 w-5 flex-shrink-0" />
+              {item.label}
+            </NavLink>
+          );
+        })}
+      </nav>
+
+      <div className="p-4 border-t border-ink-800">
+        <div className="rounded-lg bg-ink-800/50 p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Layers className="h-4 w-4 text-brand-400" />
+            <p className="text-xs font-semibold text-white">Courier API Ready</p>
+          </div>
+          <p className="text-[11px] text-ink-400 leading-snug">
+            Structure supports FedEx, UPS, DHL integration via edge functions.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
