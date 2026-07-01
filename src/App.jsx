@@ -6,6 +6,7 @@ import { CreateLabel } from './pages/CreateLabel.jsx';
 import { BulkBarcodes } from './pages/BulkBarcodes.jsx';
 import { LabelHistory } from './pages/LabelHistory.jsx';
 import { Settings } from './pages/Settings.jsx';
+import { UnmaskTrackingIds } from './pages/UnmaskTrackingIds.jsx';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
             <Route path="/create" element={<CreateLabel />} />
             <Route path="/create/:id" element={<CreateLabel />} />
             <Route path="/bulk" element={<BulkBarcodes />} />
+            <Route path="/unmask" element={<UnmaskTrackingIds />} />
             <Route path="/history" element={<LabelHistory />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

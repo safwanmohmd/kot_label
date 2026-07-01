@@ -61,6 +61,7 @@ export function CreateLabel() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedId, setSavedId] = useState(id ?? null);
 
+  // Fetch label from history if ID is present
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -99,23 +100,35 @@ export function CreateLabel() {
     };
   }, [id, toast]);
 
+  // Sync form defaults dynamically when settings change (only for un-saved/new entries)
+  useEffect(() => {
+    if (!id && !savedId && settings) {
+      setForm((prev) => ({
+        ...prev,
+        ...settingsDefaults(settings),
+      }));
+    }
+  }, [settings, id, savedId]);
+
   const size = form.label_size === CUSTOM_LABEL_SIZE_KEY
     ? {
         key: CUSTOM_LABEL_SIZE_KEY,
-        name: settings.customLabelSize.widthMm + ' x ' + settings.customLabelSize.heightMm + ' mm',
+        name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm',
         description: 'Custom',
-        widthMm: settings.customLabelSize.widthMm,
-        heightMm: settings.customLabelSize.heightMm,
+        widthMm: settings?.customLabelSize?.widthMm ?? 100,
+        heightMm: settings?.customLabelSize?.heightMm ?? 150,
         layout: 'full',
       }
     : getLabelSize(form.label_size);
+
   const labelSizes = [
     ...LABEL_SIZES,
-    { key: CUSTOM_LABEL_SIZE_KEY, name: settings.customLabelSize.widthMm + ' x ' + settings.customLabelSize.heightMm + ' mm', description: 'Custom' },
+    { key: CUSTOM_LABEL_SIZE_KEY, name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm', description: 'Custom' },
   ];
+
   const barcodeSettings = useMemo(
-    () => ({ ...settings.barcode, type: form.barcode_type }),
-    [settings.barcode, form.barcode_type],
+    () => ({ ...settings?.barcode, type: form.barcode_type }),
+    [settings?.barcode, form.barcode_type],
   );
 
   const trackingInvalid = form.tracking_id.length > 0 && !supportsValue(form.barcode_type, form.tracking_id);
@@ -499,9 +512,9 @@ export function CreateLabel() {
                   label={form}
                   size={size}
                   settings={barcodeSettings}
-                  organizationName={settings.organizationName}
-                  customerPosition={settings.customerPosition}
-                  labelHeader={settings.labelHeader}
+                  organizationName={settings?.organizationName}
+                  customerPosition={settings?.customerPosition}
+                  labelHeader={settings?.labelHeader}
                 />
               </div>
             </div>
@@ -528,9 +541,11 @@ function MiniStat({ icon: Icon, label, value }) {
 }
 
 function settingsDefaults(settings) {
+  if (!settings) return {};
   return {
-    label_size: settings.defaultLabelSize,
-    courier_name: settings.defaultCourier,
+    label_size: settings.defaultLabelSize || '100x150',
+    courier_name: settings.defaultCourier || 'Ekart',
+    barcode_type: settings.barcode?.type || 'CODE128',
     receiver_country: 'United States',
   };
 }
@@ -538,6 +553,17 @@ function settingsDefaults(settings) {
 function renderLabelHtml(form, size, barcode, orgName, customerPosition, labelHeader) {
   const isCompact = size.layout === 'compact';
   const barcodeType = form.barcode_type;
+
+  // FAILSAFE STRUCTURAL HEADER TOGGLE (Matches preview layout 1:1)
+  const isHeaderEnabled = 
+    labelHeader !== null && 
+    labelHeader !== undefined && 
+    labelHeader.enabled !== false && 
+    labelHeader.disabled !== true &&
+    labelHeader.show !== false;
+
+  const headerHeight = isHeaderEnabled ? (labelHeader?.heightMm ?? 22) : 0;
+  const adjustedCustomerY = isHeaderEnabled ? (customerPosition?.yMm ?? 62) : Math.max(5, (customerPosition?.yMm ?? 62) - 22);
 
   if (isCompact) {
     return `
@@ -561,8 +587,9 @@ function renderLabelHtml(form, size, barcode, orgName, customerPosition, labelHe
   }
 
   return `
-  <div class="print-page" style="width:${size.widthMm}mm;height:${size.heightMm}mm;position:relative;font-family:Inter,sans-serif;overflow:hidden;">
-    <div style="background:${labelHeader?.color ?? '#2563eb'};color:white;height:${labelHeader?.heightMm ?? 22}mm;padding:0 5mm;display:flex;align-items:center;">
+  <div class="print-page" style="width:${size.widthMm}mm;height:${size.heightMm}mm;position:relative;font-family:Inter,sans-serif;overflow:hidden;background:white;">
+    ${isHeaderEnabled ? `
+    <div style="background:${labelHeader?.color ?? '#2563eb'};color:white;height:${headerHeight}mm;padding:0 5mm;display:flex;align-items:center;position:absolute;top:0;left:0;right:0;">
       <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
         <div>
           <div style="font-size:10px;font-weight:bold;letter-spacing:0.05em;">SHIPPING LABEL</div>
@@ -571,33 +598,39 @@ function renderLabelHtml(form, size, barcode, orgName, customerPosition, labelHe
         ${form.courier_name ? `<div style="font-size:11px;font-weight:bold;background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:4px;">${escapeHtml(form.courier_name)}</div>` : ''}
       </div>
     </div>
-    <div style="position:absolute;left:5mm;right:5mm;top:${(labelHeader?.heightMm ?? 22) + 5}mm;">
-      <div>
-        <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;">TRACKING ID</div>
-        <div style="font-size:14px;font-family:monospace;font-weight:bold;color:#0f172a;word-break:break-all;">${escapeHtml(form.tracking_id)}</div>
+    ` : ''}
+    
+    <div style="position:absolute;left:5mm;right:5mm;top:${headerHeight + 5}mm;bottom:5mm;display:flex;flex-direction:column;justify-content:space-between;">
+      <div style="position:relative;width:100%;">
+        <div>
+          <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;">TRACKING ID</div>
+          <div style="font-size:14px;font-family:monospace;font-weight:bold;color:#0f172a;word-break:break-all;">${escapeHtml(form.tracking_id || '-')}</div>
+        </div>
+        <div id="barcode" style="position:absolute;left:0;top:15mm;width:100%;height:20mm;background:white;border:1px solid #e2e8f0;border-radius:4px;display:flex;align-items:center;justify-content:center;"></div>
       </div>
-      <div id="barcode" style="position:absolute;left:0;top:15mm;width:100%;height:20mm;background:white;border:1px solid #e2e8f0;border-radius:4px;display:flex;align-items:center;justify-content:center;"></div>
-      <div style="border-top:1px dashed #cbd5e1;"></div>
-      <div style="position:absolute;left:${Math.max(0, (customerPosition?.xMm ?? 5) - 5)}mm;top:${Math.max(0, (customerPosition?.yMm ?? 62) - ((labelHeader?.heightMm ?? 22) + 5))}mm;width:${customerPosition?.widthMm ?? 90}mm;">
+
+      <div style="position:absolute;left:${Math.max(0, (customerPosition?.xMm ?? 5) - 5)}mm;top:${Math.max(0, adjustedCustomerY - (headerHeight + 5))}mm;width:${customerPosition?.widthMm ?? 90}mm;">
         <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;margin-bottom:2px;">SHIP TO</div>
-        <div style="font-size:${customerPosition?.fontSize ?? 13}px;font-weight:bold;color:#0f172a;">${escapeHtml(form.receiver_name)}</div>
-        <div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml(form.receiver_address)}</div>
+        <div style="font-size:${customerPosition?.fontSize ?? 13}px;font-weight:bold;color:#0f172a;">${escapeHtml(form.receiver_name || 'Receiver name')}</div>
+        <div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml(form.receiver_address || 'Address')}</div>
         ${[form.receiver_city, form.receiver_postal_code].filter(Boolean).join(' ') ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml([form.receiver_city, form.receiver_postal_code].filter(Boolean).join(' '))}</div>` : ''}
         ${form.receiver_country ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml(form.receiver_country)}</div>` : ''}
         ${form.receiver_phone ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#475569;">Tel: ${escapeHtml(form.receiver_phone)}</div>` : ''}
       </div>
-      ${(form.sender_name || form.sender_address) ? `
-      <div style="border-top:1px dashed #cbd5e1;"></div>
-      <div>
-        <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;margin-bottom:2px;">FROM</div>
-        ${form.sender_name ? `<div style="font-size:11px;font-weight:bold;color:#1e293b;">${escapeHtml(form.sender_name)}</div>` : ''}
-        ${form.sender_address ? `<div style="font-size:11px;color:#475569;">${escapeHtml(form.sender_address)}</div>` : ''}
-      </div>` : ''}
-      ${(form.courier_service || form.weight) ? `
-      <div style="margin-top:auto;border-top:1px solid #e2e8f0;padding-top:3mm;display:flex;gap:6mm;font-size:10px;">
-        ${form.courier_service ? `<div><span style="font-weight:bold;color:#64748b;">SERVICE: </span><span style="color:#1e293b;">${escapeHtml(form.courier_service)}</span></div>` : ''}
-        ${form.weight ? `<div><span style="font-weight:bold;color:#64748b;">WEIGHT: </span><span style="color:#1e293b;">${escapeHtml(form.weight)}</span></div>` : ''}
-      </div>` : ''}
+
+      <div style="margin-top:auto;width:100%;display:flex;flex-direction:column;gap:1.5mm;">
+        ${(form.sender_name || form.sender_address) ? `
+        <div style="border-top:1px dashed #cbd5e1;padding-top:2mm;">
+          <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;margin-bottom:2px;">FROM</div>
+          ${form.sender_name ? `<div style="font-size:11px;font-weight:bold;color:#1e293b;">${escapeHtml(form.sender_name)}</div>` : ''}
+          ${form.sender_address ? `<div style="font-size:11px;color:#475569;">${escapeHtml(form.sender_address)}</div>` : ''}
+        </div>` : ''}
+        ${(form.courier_service || form.weight) ? `
+        <div style="border-top:1px solid #e2e8f0;padding-top:2mm;display:flex;gap:6mm;font-size:10px;">
+          ${form.courier_service ? `<div><span style="font-weight:bold;color:#64748b;">SERVICE: </span><span style="color:#1e293b;">${escapeHtml(form.courier_service)}</span></div>` : ''}
+          ${form.weight ? `<div><span style="font-weight:bold;color:#64748b;">WEIGHT: </span><span style="color:#1e293b;">${escapeHtml(form.weight)}</span></div>` : ''}
+        </div>` : ''}
+      </div>
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -610,7 +643,7 @@ function renderLabelHtml(form, size, barcode, orgName, customerPosition, labelHe
       try {
         JsBarcode(svg, "${escapeHtml(sanitizeForCode39(form.tracking_id))}", {
           format: "${barcodeType === 'CODE39' ? 'CODE39' : 'CODE128'}",
-          width: ${barcode.width}, height: 50, displayValue: true, fontSize: 12, margin: 2,
+          width: ${barcode?.width || 2}, height: 50, displayValue: true, fontSize: 12, margin: 2,
           background: "#ffffff", lineColor: "#0f172a"
         });
       } catch(e) { console.error(e); }

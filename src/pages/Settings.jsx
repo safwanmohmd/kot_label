@@ -24,13 +24,23 @@ const DEFAULT_SETTINGS = {
   organizationAddress: '',
   customLabelSize: DEFAULT_CUSTOM_LABEL_SIZE,
   customerPosition: DEFAULT_CUSTOMER_POSITION,
-  labelHeader: DEFAULT_LABEL_HEADER,
+  labelHeader: {
+    ...DEFAULT_LABEL_HEADER,
+    show: true, // Defaulting to enabled structural display
+  },
 };
 
 export function Settings() {
   const [settings, setSettings] = useSettings();
   const toast = useToast();
-  const [draft, setDraft] = useState(settings);
+  const [draft, setDraft] = useState({
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    labelHeader: {
+      show: true, // Safeguard fallback if missing from state core
+      ...(settings?.labelHeader || DEFAULT_LABEL_HEADER),
+    }
+  });
 
   function update(key, value) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -72,7 +82,7 @@ export function Settings() {
       barcode: { ...DEFAULT_BARCODE_SETTINGS },
       customLabelSize: { ...DEFAULT_CUSTOM_LABEL_SIZE },
       customerPosition: { ...DEFAULT_CUSTOMER_POSITION },
-      labelHeader: { ...DEFAULT_LABEL_HEADER },
+      labelHeader: { ...DEFAULT_LABEL_HEADER, show: true },
     });
     toast('Settings reset to defaults.', 'info');
   }
@@ -160,34 +170,57 @@ export function Settings() {
                 <input type="number" min={15} max={300} className="input" value={draft.customLabelSize.heightMm} onChange={(e) => updateCustomLabelSize('heightMm', e.target.value)} />
               </div>
             </div>
-            <div>
-              <label className="label-text">Top Bar Color</label>
-              <div className="flex items-center gap-2">
+
+            {/* NEW MODULE: Header Layout Activation Controls Toggle */}
+            <div className="bg-ink-50/50 p-3 rounded-lg border border-ink-100">
+              <label className="flex items-center gap-2 text-sm font-bold text-ink-800 cursor-pointer select-none">
                 <input
-                  type="color"
-                  className="h-10 w-14 rounded border border-ink-200 cursor-pointer"
-                  value={draft.labelHeader.color}
-                  onChange={(e) => updateLabelHeader('color', e.target.value)}
+                  type="checkbox"
+                  checked={draft.labelHeader.show !== false}
+                  onChange={(e) => updateLabelHeader('show', e.target.checked)}
+                  className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
                 />
-                <input
-                  className="input flex-1 font-mono"
-                  value={draft.labelHeader.color}
-                  onChange={(e) => updateLabelHeader('color', e.target.value)}
-                />
+                Enable Top Bar Header
+              </label>
+              <p className="text-[11px] text-ink-500 mt-1">
+                Toggles the colored header bar containing shipping block logs.
+              </p>
+            </div>
+
+            {/* Conditional Submenus rendering based on local layout validation checkbox status */}
+            {draft.labelHeader.show !== false && (
+              <div className="space-y-4 border-l-2 border-ink-100 pl-3 pt-1 animate-fade-in">
+                <div>
+                  <label className="label-text">Top Bar Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      className="h-10 w-14 rounded border border-ink-200 cursor-pointer"
+                      value={draft.labelHeader.color}
+                      onChange={(e) => updateLabelHeader('color', e.target.value)}
+                    />
+                    <input
+                      className="input flex-1 font-mono"
+                      value={draft.labelHeader.color}
+                      onChange={(e) => updateLabelHeader('color', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label-text">Top Bar Height</label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={40}
+                    value={draft.labelHeader.heightMm}
+                    onChange={(e) => updateLabelHeader('heightMm', e.target.value)}
+                    className="w-full accent-blue-600"
+                  />
+                  <p className="text-xs text-ink-500 mt-1">{draft.labelHeader.heightMm} mm</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="label-text">Top Bar Height</label>
-              <input
-                type="range"
-                min={1}
-                max={40}
-                value={draft.labelHeader.heightMm}
-                onChange={(e) => updateLabelHeader('heightMm', e.target.value)}
-                className="w-full accent-blue-600"
-              />
-              <p className="text-xs text-ink-500 mt-1">{draft.labelHeader.heightMm} mm</p>
-            </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label-text">Customer Width</label>
@@ -318,7 +351,7 @@ export function Settings() {
         <button onClick={handleSave} disabled={!dirty} className="btn-primary">
           <Save className="h-4 w-4" /> Save Settings
         </button>
-        <button onClick={handleReset} className="btn-ghost">
+        <button onClick={handleReset} disabled={!dirty} className="btn-ghost">
           <RotateCcw className="h-4 w-4" /> Reset to Defaults
         </button>
         {dirty && <span className="text-xs text-amber-600 ml-2">Unsaved changes</span>}
@@ -337,6 +370,10 @@ function LabelLayoutEditor({ draft, updateCustomerPosition }) {
   const heightPx = size.heightMm * scale;
   const customer = draft.customerPosition;
   const bodyFontSize = Math.max(8, customer.fontSize - 2);
+
+  const isHeaderVisible = draft.labelHeader.show !== false;
+  // Calculate dynamic offsets so layout stays intact if header is pulled out
+  const headerHeightMm = isHeaderVisible ? draft.labelHeader.heightMm : 0;
 
   function moveCustomer(e) {
     const rect = previewRef.current?.getBoundingClientRect();
@@ -363,23 +400,27 @@ function LabelLayoutEditor({ draft, updateCustomerPosition }) {
             if (e.buttons === 1) moveCustomer(e);
           }}
         >
-          <div
-            className="absolute inset-x-0 top-0 px-3 flex items-center justify-between text-white"
-            style={{ height: `${draft.labelHeader.heightMm * scale}px`, backgroundColor: draft.labelHeader.color }}
-          >
-            <div>
-              <p className="text-[8px] font-bold leading-tight">SHIPPING LABEL</p>
-              <p className="text-[8px] text-white/80 leading-tight">{draft.organizationName || 'ElasticRunKottakkal_KOT'}</p>
+          {/* Top Bar Header Section - Rendered conditionally based on draft setup */}
+          {isHeaderVisible && (
+            <div
+              className="absolute inset-x-0 top-0 px-3 flex items-center justify-between text-white"
+              style={{ height: `${headerHeightMm * scale}px`, backgroundColor: draft.labelHeader.color }}
+            >
+              <div>
+                <p className="text-[8px] font-bold leading-tight">SHIPPING LABEL</p>
+                <p className="text-[8px] text-white/80 leading-tight">{draft.organizationName || 'ElasticRunKottakkal_KOT'}</p>
+              </div>
+              <p className="text-[9px] font-bold bg-white/15 px-2 py-0.5 rounded">{draft.defaultCourier}</p>
             </div>
-            <p className="text-[9px] font-bold bg-white/15 px-2 py-0.5 rounded">{draft.defaultCourier}</p>
-          </div>
-          <div className="absolute" style={{ left: `${5 * scale}px`, top: `${(draft.labelHeader.heightMm + 5) * scale}px`, right: `${5 * scale}px` }}>
+          )}
+          
+          <div className="absolute" style={{ left: `${5 * scale}px`, top: `${(headerHeightMm + 5) * scale}px`, right: `${5 * scale}px` }}>
             <p className="text-[8px] font-bold text-ink-500">TRACKING ID</p>
             <p className="text-[11px] font-mono font-bold">1Z999AA10123456784</p>
           </div>
           <div
             className="absolute rounded border border-ink-200 bg-white flex items-center justify-center text-[10px] font-mono text-ink-500"
-            style={{ left: `${5 * scale}px`, top: `${(draft.labelHeader.heightMm + 20) * scale}px`, width: `${(size.widthMm - 10) * scale}px`, height: `${20 * scale}px` }}
+            style={{ left: `${5 * scale}px`, top: `${(headerHeightMm + 20) * scale}px`, width: `${(size.widthMm - 10) * scale}px`, height: `${20 * scale}px` }}
           >
             BARCODE
           </div>

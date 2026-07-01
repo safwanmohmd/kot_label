@@ -24,47 +24,66 @@ export function LabelPreview({ label, size, settings, organizationName, customer
     );
   }
 
-  const header = labelHeader ?? { color: '#2563eb', heightMm: 22 };
+  // FAILSAFE SAFETY CHECK: Evaluate all common disable flags (enabled flag, disabled flag, or missing height)
+  const isHeaderEnabled = 
+    labelHeader !== null && 
+    labelHeader !== undefined && 
+    labelHeader.enabled !== false && 
+    labelHeader.disabled !== true &&
+    labelHeader.show !== false;
+
+  const headerHeightMm = isHeaderEnabled ? (labelHeader?.heightMm ?? 22) : 0;
+  const headerColor = labelHeader?.color ?? '#2563eb';
+
   const customer = customerPosition ?? { xMm: 5, yMm: 62, widthMm: 90, fontSize: 11 };
   const bodyFontSize = Math.max(8, customer.fontSize - 2);
+
+  // If header is disabled, shift elements like "SHIP TO" upwards dynamically
+  const adjustedCustomerY = isHeaderEnabled ? customer.yMm : Math.max(5, customer.yMm - 22);
 
   return (
     <div
       className="bg-white border border-ink-300 shadow-card overflow-hidden relative"
       style={{ width: `${size.widthMm}mm`, height: `${size.heightMm}mm` }}
     >
-      <div
-        className="absolute inset-x-0 top-0 text-white px-4 flex items-center justify-between"
-        style={{ height: `${header.heightMm}mm`, backgroundColor: header.color }}
-      >
-        <div>
-          <h5 className="text-sm font-bold tracking-wide">SHIPPING LABEL</h5>
-          <p className="text-[10px] text-white/80">{organizationName ?? 'ElasticRunKottakkal_KOT'}</p>
+      {/* Conditionally Render Top Banner */}
+      {isHeaderEnabled && (
+        <div
+          className="absolute inset-x-0 top-0 text-white px-4 flex items-center justify-between"
+          style={{ height: `${headerHeightMm}mm`, backgroundColor: headerColor }}
+        >
+          <div>
+            <h5 className="text-sm font-bold tracking-wide">SHIPPING LABEL</h5>
+            <p className="text-[10px] text-white/80">{organizationName ?? 'ElasticRunKottakkal_KOT'}</p>
+          </div>
+          {label.courier_name && (
+            <span className="text-xs font-bold bg-white/15 px-2 py-1 rounded">
+              {label.courier_name}
+            </span>
+          )}
         </div>
-        {label.courier_name && (
-          <span className="text-xs font-bold bg-white/15 px-2 py-1 rounded">
-            {label.courier_name}
-          </span>
-        )}
-      </div>
+      )}
 
-      <div className="absolute" style={{ left: '5mm', top: `${header.heightMm + 5}mm`, right: '5mm' }}>
+      {/* Tracking ID block */}
+      <div className="absolute" style={{ left: '5mm', top: `${headerHeightMm + 5}mm`, right: '5mm' }}>
         <p className="text-[9px] font-bold text-ink-500 tracking-widest">TRACKING ID</p>
         <p className="text-base font-mono font-bold text-ink-900 break-all">
           {label.tracking_id || '-'}
         </p>
       </div>
 
+      {/* Barcode wrapper */}
       <Barcode
         value={label.tracking_id}
         settings={{ ...settings, height: 60, fontSize: 12, margin: 2 }}
         className="absolute bg-white border border-ink-100 rounded flex items-center justify-center"
-        style={{ left: '5mm', top: `${header.heightMm + 20}mm`, width: `${size.widthMm - 10}mm`, height: '20mm' }}
+        style={{ left: '5mm', top: `${headerHeightMm + 20}mm`, width: `${size.widthMm - 10}mm`, height: '20mm' }}
       />
 
+      {/* Ship To Box */}
       <div
         className="absolute border border-dashed border-brand-300 bg-white/80 p-1"
-        style={{ left: `${customer.xMm}mm`, top: `${customer.yMm}mm`, width: `${customer.widthMm}mm` }}
+        style={{ left: `${customer.xMm}mm`, top: `${adjustedCustomerY}mm`, width: `${customer.widthMm}mm` }}
       >
         <p className="text-[9px] font-bold text-ink-500 tracking-widest mb-1">SHIP TO</p>
         <p className="font-bold text-ink-900 leading-tight" style={{ fontSize: `${customer.fontSize}px` }}>
@@ -86,6 +105,7 @@ export function LabelPreview({ label, size, settings, organizationName, customer
         )}
       </div>
 
+      {/* Return Sender Block */}
       {(label.sender_name || label.sender_address) && (
         <div className="absolute left-[5mm] right-[5mm] bottom-[14mm] border-t border-dashed border-ink-200 pt-2">
           <p className="text-[9px] font-bold text-ink-500 tracking-widest mb-1">FROM</p>
@@ -94,6 +114,7 @@ export function LabelPreview({ label, size, settings, organizationName, customer
         </div>
       )}
 
+      {/* Logistics Stats Bar */}
       {(label.courier_service || label.weight) && (
         <div className="absolute left-[5mm] right-[5mm] bottom-[5mm] border-t border-ink-200 pt-2 flex gap-4 text-[10px]">
           {label.courier_service && <div><span className="font-bold text-ink-500">SERVICE: </span><span className="text-ink-800">{label.courier_service}</span></div>}

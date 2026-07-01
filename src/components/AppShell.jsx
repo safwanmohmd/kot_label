@@ -8,6 +8,7 @@ import {
   Package,
   ScanLine,
   Menu,
+  Eye,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
   { to: '/history', label: 'Label History', icon: History },
   { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/unmask', label: 'Unmask Deck', icon: Eye }
 ];
 
 export function AppShell({ children }) {
