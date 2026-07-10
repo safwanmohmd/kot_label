@@ -24,7 +24,8 @@ import {
   Wand2,
   Edit2,
   Eye,
-  Info
+  Info,
+  Save
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { fetchLpRecords, createLpRecord, deleteLpRecord, updateLpRecord, createLpRecordsBulk } from '../lib/lpService.js';
@@ -41,7 +42,7 @@ export function LpTrackerList() {
   
   // Table View Switch Control ('active' or 'archived')
   const [currentView, setCurrentView] = useState('active');
-  const [sortDirection, setSortDirection] = useState('auto'); // Default to automatic rank sorting
+  const [sortDirection, setSortDirection] = useState('auto'); 
   
   // Inline Wishmaster Editing Tracking States
   const [editingRecordId, setEditingRecordId] = useState(null);
@@ -50,13 +51,16 @@ export function LpTrackerList() {
 
   // Quick View Inspection Modal State
   const [inspectingItem, setInspectingItem] = useState(null);
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [editedDetailsText, setEditedDetailsText] = useState('');
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   // Single Form Fields
   const [trackingId, setTrackingId] = useState('');
   const [wishmasterName, setWishmasterName] = useState('');
   const [agingDays, setAgingDays] = useState('');
   const [status, setStatus] = useState('NOT FOUND');
-  const [itemDetails, setItemDetails] = useState(''); // New input field state for item details
+  const [itemDetails, setItemDetails] = useState(''); 
   
   // Bulk Form Fields
   const [bulkText, setBulkText] = useState('');
@@ -66,7 +70,6 @@ export function LpTrackerList() {
 
   const STATUS_OPTIONS = ['NOT FOUND', 'CLEARING TODAY', 'LOSS'];
 
-  // Priority Rank Matrix for Auto-Sorting Logic
   const PRIORITY_RANK = {
     'CRITICAL': 4,
     'HIGH': 3,
@@ -116,7 +119,35 @@ export function LpTrackerList() {
     return (new Date() - resolvedDate) > twoDaysInMs;
   }
 
-  // --- AUTOMATED ABSENCE SWEEP ENGINE ---
+  // Handle trigger for launching view inspector modal
+  function openInspector(item) {
+    setInspectingItem(item);
+    setEditedDetailsText(item.details || '');
+    setIsEditingDetails(false);
+  }
+
+  // --- SAVE CHOSEN EDITABLE DETAILS BACKEND WRITER ---
+  async function handleSaveInspectedDetails() {
+    setIsSavingDetails(true);
+    try {
+      const updatedValue = editedDetailsText.trim() || null;
+      
+      // Optimistic layout update
+      setRecords(prev => prev.map(r => r.id === inspectingItem.id ? { ...r, details: updatedValue } : r));
+      
+      await updateLpRecord(inspectingItem.id, { details: updatedValue });
+      
+      // Sync local viewing instance reference status
+      setInspectingItem(prev => ({ ...prev, details: updatedValue }));
+      setIsEditingDetails(false);
+      toast('Shipment details updated successfully.', 'success');
+    } catch (err) {
+      toast('Failed to save shipment detail updates.', 'error');
+    } finally {
+      setIsSavingDetails(false);
+    }
+  }
+
   async function sweepMissingRecords(incomingTrackingIds) {
     const upperIncomingIds = incomingTrackingIds.map(id => id.trim().toUpperCase());
     
@@ -173,7 +204,7 @@ export function LpTrackerList() {
       aging_days: parseInt(agingDays, 10),
       priority: assignedPriority,
       status: status,
-      details: itemDetails.trim() || null, // Write details from layout to database node row
+      details: itemDetails.trim() || null, 
       resolved_at: (status === 'LOSS' || status === 'CLEARING TODAY') ? new Date().toISOString() : null
     };
 
@@ -230,7 +261,7 @@ export function LpTrackerList() {
         aging_days: parsedAging,
         priority: assignedPriority,
         status: inferredStatus,
-        details: null, // Bulk input records explicitly map details directly to null
+        details: null, 
         resolved_at: inferredStatus === 'CLEARING TODAY' ? timestamp : null
       });
     });
@@ -271,14 +302,13 @@ export function LpTrackerList() {
     setBulkWishmaster('');
   }
 
-  // --- START INLINE WISHMASTER EDIT HANDLERS ---
   function startEditingWm(item) {
     if (item.status === 'LOSS' || item.status === 'CLEARING TODAY') return; 
     setEditingRecordId(item.id);
     setEditingWmName(item.wishmaster_name);
   }
 
-  async function saveInlineWmUpdate(id) {
+async function saveInlineWmUpdate(id) {
     if (!editingWmName.trim()) {
       toast('Wishmaster assignment name cannot be left blank.', 'error');
       return;
@@ -301,9 +331,11 @@ export function LpTrackerList() {
     setEditingRecordId(null);
     setEditingWmName('');
   }
-  // --- END INLINE WISHMASTER EDIT HANDLERS ---
 
   async function handleStatusChange(id, nextStatus) {
+    if (nextStatus === 'LOSS' && !window.confirm("Are you sure you want to mark this shipment file as a LOSS?")) return;
+    if (nextStatus === 'CLEARING TODAY' && !window.confirm("Are you sure you want to mark this shipment file as CLEARED?")) return;
+
     try {
       const isResolved = nextStatus === 'LOSS' || nextStatus === 'CLEARING TODAY';
       const timestamp = isResolved ? new Date().toISOString() : null;
@@ -318,6 +350,9 @@ export function LpTrackerList() {
   }
 
   async function handleMarkLoss(id, trackingLabel) {
+    // 🚨 ADDED CONFIRMATION PROMPT 🚨
+    if (!window.confirm(`Are you sure you want to mark case reference ${trackingLabel} as a complete asset LOSS?`)) return;
+
     try {
       const timestamp = new Date().toISOString();
       setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'LOSS', priority: 'CRITICAL', resolved_at: timestamp } : r));
@@ -330,6 +365,9 @@ export function LpTrackerList() {
   }
 
   async function handleMarkCleared(id, trackingLabel) {
+    // 🚨 ADDED CONFIRMATION PROMPT 🚨
+    if (!window.confirm(`Are you sure you want to confirm package deployment and CLEAR case reference ${trackingLabel}?`)) return;
+
     try {
       const timestamp = new Date().toISOString();
       setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'CLEARING TODAY', resolved_at: timestamp } : r));
@@ -429,7 +467,7 @@ export function LpTrackerList() {
         </button>
       </div>
 
-      {/* --- SEGMENTED SWITCH COMPONENT --- */}
+      {/* SEGMENTED SWITCH COMPONENT */}
       <div className="flex items-center justify-start p-1 bg-ink-100 rounded-xl max-w-sm border border-ink-200">
         <button
           onClick={() => setCurrentView('active')}
@@ -604,9 +642,9 @@ export function LpTrackerList() {
 
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* --- ACTION EYE BUTTON --- */}
+                          {/* ACTION EYE BUTTON */}
                           <button
-                            onClick={() => setInspectingItem(item)}
+                            onClick={() => openInspector(item)}
                             className="p-1.5 text-ink-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
                             title="Inspect shipment explanations"
                           >
@@ -649,7 +687,7 @@ export function LpTrackerList() {
         </div>
       </div>
 
-      {/* --- QUICK VIEW INSPECTION MODAL PANEL --- */}
+      {/* --- QUICK VIEW INSPECTION MODAL PANEL (WITH EDITS ENABLED) --- */}
       {inspectingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="card w-full max-w-md p-6 border-t-4 border-t-brand-600 border-x border-b border-ink-200 bg-white shadow-xl relative animate-scale-up">
@@ -686,7 +724,7 @@ export function LpTrackerList() {
               <div className="flex justify-between items-center py-1.5 border-b border-ink-50">
                 <span className="text-ink-500 font-medium">Investigation Status:</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded border font-mono font-bold ${getStatusSelectStyle(inspectingItem.status)}`}>
-                  {inspectingItem.status === 'LOSS' ? 'LOSS' : inspectingItem.status}
+                  {inspectingItem.status}
                 </span>
               </div>
               {inspectingItem.resolved_at && (
@@ -699,12 +737,64 @@ export function LpTrackerList() {
               )}
             </div>
 
-            {/* --- CORE EXPLANATION CONTAINER --- */}
-            <div className="bg-brand-50/50 border border-brand-100 p-4 rounded-xl mt-5 text-[11px] text-ink-800 space-y-1">
-              <span className="block font-black uppercase text-brand-800 tracking-wider text-[10px]">Shipment Details Explanation:</span>
-              <p className="leading-relaxed whitespace-pre-wrap italic font-medium">
-                {inspectingItem.details ? inspectingItem.details : 'N/A'}
-              </p>
+            {/* CORE EXPLANATION CONTAINER */}
+            <div className="bg-brand-50/50 border border-brand-100 p-4 rounded-xl mt-5 text-[11px] text-ink-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="block font-black uppercase text-brand-800 tracking-wider text-[10px]">
+                  Shipment Details Explanation:
+                </span>
+                
+                {/* Edit Button trigger */}
+                {!isEditingDetails && (
+                  <button 
+                    type="button"
+                    onClick={() => setIsEditingDetails(true)}
+                    className="text-[10px] font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1 transition-colors"
+                  >
+                    <Edit2 className="h-3 w-3" /> Edit Details
+                  </button>
+                )}
+              </div>
+
+              {isEditingDetails ? (
+                <div className="space-y-2 animate-fade-in">
+                  <textarea 
+                    className="input text-xs bg-white h-24 p-2 w-full border-brand-400 focus:border-brand-600 resize-none leading-relaxed font-medium"
+                    value={editedDetailsText}
+                    onChange={e => setEditedDetailsText(e.target.value)}
+                    placeholder="Enter updated shipment context rules or remarks..."
+                  />
+                  <div className="flex justify-end gap-1.5">
+                    <button 
+                      onClick={() => {
+                        setIsEditingDetails(false);
+                        setEditedDetailsText(inspectingItem.details || '');
+                      }}
+                      className="px-2 py-1 rounded bg-ink-200 text-ink-700 font-bold text-[10px] hover:bg-ink-300 transition-colors"
+                      disabled={isSavingDetails}
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={handleSaveInspectedDetails}
+                      className="px-2 py-1 rounded bg-brand-600 text-white font-bold text-[10px] hover:bg-brand-700 transition-colors flex items-center gap-1"
+                      disabled={isSavingDetails}
+                    >
+                      {isSavingDetails ? (
+                        <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                      ) : (
+                        <>
+                          <Save className="h-2.5 w-2.5" /> Save Changes
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="leading-relaxed whitespace-pre-wrap italic font-medium">
+                  {inspectingItem.details ? inspectingItem.details : 'N/A'}
+                </p>
+              )}
             </div>
 
             <button 
@@ -717,7 +807,7 @@ export function LpTrackerList() {
         </div>
       )}
 
-      {/* --- POPUP OVERLAY DATA MODAL DIALOG --- */}
+      {/* POPUP OVERLAY DATA MODAL DIALOG */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="card w-full max-w-lg p-6 border border-brand-200 bg-white shadow-xl relative animate-scale-up">
@@ -758,7 +848,6 @@ export function LpTrackerList() {
                       </select>
                     </div>
                   </div>
-                  {/* --- NEW INPUT COMPONENT ADDED FOR SINGLE ENTRY MODE --- */}
                   <div>
                     <label className="label-text flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-ink-400" /> Shipment Details / Explanation</label>
                     <textarea 

@@ -1,5 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
+/**
+ * Fetch all active and resolved LP tracker records
+ */
 export async function fetchLpRecords() {
   if (!isSupabaseConfigured) return [];
   try {
@@ -31,6 +34,10 @@ export async function fetchLpRecords() {
   }
 }
 
+/**
+ * Insert a single LP tracker record
+ * Logs precise error payload strings to clarify constraint blocks
+ */
 export async function createLpRecord(input) {
   if (!isSupabaseConfigured) {
     return {
@@ -41,14 +48,13 @@ export async function createLpRecord(input) {
     };
   }
   
-  // Cleanly structured payload to explicitly map 'details' safely to your DB table
   const payload = {
     tracking_id: input.tracking_id,
     wishmaster_name: input.wishmaster_name,
     aging_days: input.aging_days,
     priority: input.priority,
     status: input.status,
-    details: input.details || null, // Handles fallback if left blank by user
+    details: input.details || null, 
     resolved_at: input.resolved_at || null
   };
 
@@ -58,10 +64,23 @@ export async function createLpRecord(input) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    // 🚨 PRINTS THE EXACT POSTGRES RULE BLOCKING YOUR SAVE TO CONSOLE 🚨
+    console.error("--- SUPABASE ERROR DIAGNOSTICS ---");
+    console.error("Status Code:", error.status);
+    console.error("Error Code:", error.code);
+    console.error("Error Message:", error.message);
+    console.error("Error Details:", error.details);
+    console.error("Hint Context:", error.hint);
+    console.error("---------------------------------");
+    throw error;
+  }
   return data;
 }
 
+/**
+ * Delete a data record from the table entirely
+ */
 export async function deleteLpRecord(id) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('lp_tracker').delete().eq('id', id);
@@ -104,14 +123,13 @@ export async function createLpRecordsBulk(recordsArray) {
     }));
   }
 
-  // Map over incoming bulk arrays to ensure structural compatibility with the single-row layout schema
   const sanitizedRecords = recordsArray.map(record => ({
     tracking_id: record.tracking_id,
     wishmaster_name: record.wishmaster_name,
     aging_days: record.aging_days,
     priority: record.priority,
     status: record.status,
-    details: record.details ?? null, // Will accurately settle as explicit null literals for bulk shipments
+    details: record.details ?? null, 
     resolved_at: record.resolved_at || null
   }));
 
