@@ -20,7 +20,8 @@ const NAV = [
   { to: '/history', label: 'Label History', icon: History },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/unmask', label: 'Unmask Deck', icon: Eye },
-  { to: '/lp', label: 'Lp Tracker', icon: Eye }
+  { to: '/lp', label: 'Lp Tracker', icon: Eye },
+  { to: '/manualdelivery', label: 'Manual Delivery', icon: Eye }
 ];
 
 export function AppShell({ children }) {

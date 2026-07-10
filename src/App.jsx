@@ -9,6 +9,7 @@ import { Settings } from './pages/Settings.jsx';
 import { UnmaskTrackingIds } from './pages/UnmaskTrackingIds.jsx';
 
 import { LpTrackerList } from './pages/LpTrackerList.jsx';
+import { ManualDeliveryTracker } from './pages/ManualDeliveryTracker.jsx';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/lp" element={<LpTrackerList />} />
             <Route path="/history" element={<LabelHistory />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
           </Routes>
         </AppShell>
       </BrowserRouter>
