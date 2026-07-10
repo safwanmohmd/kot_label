@@ -19,7 +19,8 @@ const NAV = [
   { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
   { to: '/history', label: 'Label History', icon: History },
   { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/unmask', label: 'Unmask Deck', icon: Eye }
+  { to: '/unmask', label: 'Unmask Deck', icon: Eye },
+  { to: '/lp', label: 'Lp Tracker', icon: Eye }
 ];
 
 export function AppShell({ children }) {

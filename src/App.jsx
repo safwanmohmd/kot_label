@@ -8,6 +8,8 @@ import { LabelHistory } from './pages/LabelHistory.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { UnmaskTrackingIds } from './pages/UnmaskTrackingIds.jsx';
 
+import { LpTrackerList } from './pages/LpTrackerList.jsx';
+
 function App() {
   return (
     <ToastProvider>
@@ -19,6 +21,7 @@ function App() {
             <Route path="/create/:id" element={<CreateLabel />} />
             <Route path="/bulk" element={<BulkBarcodes />} />
             <Route path="/unmask" element={<UnmaskTrackingIds />} />
+            <Route path="/lp" element={<LpTrackerList />} />
             <Route path="/history" element={<LabelHistory />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
