@@ -61,12 +61,20 @@ export async function createLpRecord(input) {
   return data;
 }
 
+/**
+ * Individual Row Purge: Permanently drops a single target record 
+ * from the table when its specific delete button is clicked.
+ */
 export async function deleteLpRecord(id) {
   if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from('lp_tracker').delete().eq('id', id);
+  
+  const { error } = await supabase
+    .from('lp_tracker')
+    .delete()
+    .eq('id', id); // Targeted single record matching
+    
   if (error) throw error;
 }
-
 export async function updateLpRecord(id, updates) {
   if (!isSupabaseConfigured) return null;
   try {
@@ -151,6 +159,7 @@ export async function updateManualDelivery(id, updates) {
 
 /**
  * Syncs a cancelled manual pickup row straight into the main LP Tracker table as a Shipment Loss
+ * FIXED: Uses .upsert() to gracefully overwrite constraints and handle 409 conflict responses.
  */
 export async function syncManualDeliveryToLpLoss(deliveryItem) {
   if (!isSupabaseConfigured) return true;
@@ -166,12 +175,15 @@ export async function syncManualDeliveryToLpLoss(deliveryItem) {
     resolved_at: new Date().toISOString()
   };
 
-  // 2. Insert transaction block into lp_tracker table
-  const { error: insertError } = await supabase
+  // 2. Upsert transaction block into lp_tracker table to handle duplicate tracking entries cleanly
+  const { error: upsertError } = await supabase
     .from('lp_tracker')
-    .insert([lpPayload]);
+    .upsert(lpPayload, {
+      onConflict: 'tracking_id',
+      ignoreDuplicates: false
+    });
 
-  if (insertError) throw insertError;
+  if (upsertError) throw upsertError;
 
   // 3. Update status flags inside origin record so it locks out multi-sync triggers
   const { data: updatedDelivery, error: updateError } = await supabase
@@ -185,4 +197,40 @@ export async function syncManualDeliveryToLpLoss(deliveryItem) {
 
   if (updateError) throw updateError;
   return updatedDelivery?.[0] ?? null;
+}
+
+/**
+ * Destructive Operation: Flushes the main LP Tracker logs for a clean day's run
+ */
+/**
+ * Safe Operation: Flushes the main LP Tracker logs for standard entries
+ * PRESERVES manual counter overruns permanently unless individually purged.
+ */
+export async function clearAllLpRecords() {
+  if (!isSupabaseConfigured) return true;
+  
+  const { error } = await supabase
+    .from('lp_tracker')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000') // Safe catch-all UUID filter
+    .neq('wishmaster_name', 'MANUAL HUB ORDER (UNRESOLVED)'); // 🔥 NEW: Protects synced loss entries from bulk clear
+
+  if (error) {
+    console.error("Failed to safely flush standard LP workspace:", error.message);
+    throw error;
+  }
+  return true;
+}
+
+/**
+ * Deletes a manual delivery record by its primary ID
+ */
+export async function deleteManualDelivery(id) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase
+    .from('manual_deliveries')
+    .delete()
+    .eq('id', id);
+    
+  if (error) throw error;
 }

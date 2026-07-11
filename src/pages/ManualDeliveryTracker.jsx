@@ -9,14 +9,16 @@ import {
   RefreshCw,
   ShieldAlert,
   Smartphone,
-  CheckSquare
+  CheckSquare,
+  Trash2 // Imported Trash icon
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { 
   fetchManualDeliveries, 
   createManualDelivery, 
   updateManualDelivery, 
-  syncManualDeliveryToLpLoss 
+  syncManualDeliveryToLpLoss,
+  deleteManualDelivery // Imported Delete service method
 } from '../lib/lpService.js';
 
 export function ManualDeliveryTracker() {
@@ -73,7 +75,7 @@ export function ManualDeliveryTracker() {
       setTrackingId('');
       setCustomerPhone('');
       setNotes('');
-      loadData();
+      await loadData();
     } catch (err) {
       toast('Failed to record manual hub delivery entry.', 'error');
     } finally {
@@ -87,8 +89,9 @@ export function ManualDeliveryTracker() {
     setIsSyncingId(item.id);
     try {
       await syncManualDeliveryToLpLoss(item);
+      setRecords(prev => prev.map(r => r.id === item.id ? { ...r, synced_to_lp: true } : r));
       toast(`Shipment ${item.tracking_id} successfully mapped to primary LP Loss database table.`, 'success');
-      loadData();
+      await loadData();
     } catch (err) {
       toast('Error mapping transaction across storage modules.', 'error');
     } finally {
@@ -106,9 +109,23 @@ export function ManualDeliveryTracker() {
         notes: `${item.notes || ''} [ERP cleared manually]`.trim()
       });
       toast(`Shipment ${item.tracking_id} marked as cleared from ERP system.`, 'success');
-      loadData();
+      await loadData();
     } catch (err) {
       toast('Failed to update ERP status flags.', 'error');
+    }
+  }
+
+  async function handleDeleteRecord(item) {
+    if (!window.confirm(`⚠️ DANGER: Are you sure you want to permanently delete record ${item.tracking_id} from logs? This action cannot be undone.`)) return;
+    
+    try {
+      // Optimistic state filter update for quick UI response
+      setRecords(prev => prev.filter(r => r.id !== item.id));
+      await deleteManualDelivery(item.id);
+      toast(`Record ${item.tracking_id} successfully deleted.`, 'success');
+    } catch (err) {
+      toast('Failed to complete background row purge.', 'error');
+      await loadData(); // Rollback local changes on backend failure
     }
   }
 
@@ -129,6 +146,8 @@ export function ManualDeliveryTracker() {
   }
 
   const filteredRecords = records.filter(rec => {
+    if (rec.synced_to_lp) return false; 
+
     const q = searchQuery.toLowerCase();
     return (
       rec.tracking_id?.toLowerCase().includes(q) ||
@@ -256,7 +275,7 @@ export function ManualDeliveryTracker() {
                 <RefreshCw className="h-3 w-3 animate-spin text-brand-600" /> Querying active registry lists...
               </div>
             ) : filteredRecords.length === 0 ? (
-              <div className="py-12 text-center text-ink-400 text-[11px] italic">No manual shipments matching search queries.</div>
+              <div className="py-12 text-center text-ink-400 text-[11px] italic">No active manual shipments matching search queries.</div>
             ) : (
               <table className="w-full border-collapse text-left text-[11px]">
                 <thead>
@@ -266,12 +285,12 @@ export function ManualDeliveryTracker() {
                     <th className="p-2.5">Handover Status</th>
                     <th className="p-2.5">Cash Position</th>
                     <th className="p-2.5">Notes</th>
-                    <th className="p-2.5 text-center w-36">Actions</th>
+                    <th className="p-2.5 text-center w-40">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ink-100">
                   {filteredRecords.map(item => (
-                    <tr key={item.id} className={`hover:bg-ink-50/30 transition-colors ${item.synced_to_lp ? 'bg-rose-50/10 opacity-90' : ''}`}>
+                    <tr key={item.id} className="hover:bg-ink-50/30 transition-colors">
                       <td className="p-2.5 font-mono font-bold text-ink-900 uppercase tracking-wide">{item.tracking_id}</td>
                       <td className="p-2.5 font-mono font-medium text-ink-600">{item.customer_phone}</td>
                       <td className="p-2.5">
@@ -308,18 +327,18 @@ export function ManualDeliveryTracker() {
                       </td>
                       <td className="p-2.5">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Reconcile Switcher Status Action Trigger */}
+                          {/* Financial Switcher */}
                           <button
                             onClick={() => toggleCashSettlement(item.id, item.cash_status)}
                             className="p-1 rounded bg-ink-50 border border-ink-200 text-ink-600 hover:text-brand-600 hover:bg-brand-50 transition-all"
                             title="Cycle Financial Settlement Status"
-                            disabled={item.synced_to_lp || item.delivery_status === 'ERP_CLEARED_DELIVERED'}
+                            disabled={item.delivery_status === 'ERP_CLEARED_DELIVERED'}
                           >
                             <CheckCircle className="h-3 w-3" />
                           </button>
 
-                          {/* ERP Clear Action Trigger */}
-                          {item.delivery_status !== 'ERP_CLEARED_DELIVERED' && !item.synced_to_lp && (
+                          {/* ERP Clear Status Tracker */}
+                          {item.delivery_status !== 'ERP_CLEARED_DELIVERED' && (
                             <button
                               onClick={() => handleMarkErpCleared(item)}
                               className="p-1 rounded bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"
@@ -329,29 +348,32 @@ export function ManualDeliveryTracker() {
                             </button>
                           )}
 
+                          {/* NEW: Permanent Row Delete Option Button */}
+                          <button
+                            onClick={() => handleDeleteRecord(item)}
+                            className="p-1 rounded bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition-all"
+                            title="Delete Record Permanently"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+
                           <span className="text-ink-200 select-none">|</span>
 
-                          {/* DISPATCH DIRECT SYNC ACTION TRIGGER TO LP LOSS ARCS TABLE */}
-                          {item.synced_to_lp ? (
-                            <span className="text-[9px] font-mono uppercase font-black text-red-600 bg-red-50 px-1 py-0.5 rounded border border-red-100">
-                              Synced
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleCrossSyncLpLoss(item)}
-                              className="flex items-center gap-0.5 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-1.5 py-0.5 rounded shadow-3xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Sync to primary LP Tracker logs table"
-                              disabled={isSyncingId === item.id || item.delivery_status === 'ERP_CLEARED_DELIVERED'}
-                            >
-                              {isSyncingId === item.id ? (
-                                <RefreshCw className="h-2 w-2 animate-spin" />
-                              ) : (
-                                <>
-                                  <ShieldAlert className="h-2.5 w-2.5" /> Loss
-                                </>
-                              )}
-                            </button>
-                          )}
+                          {/* Cross-Sync Escalation Area */}
+                          <button
+                            onClick={() => handleCrossSyncLpLoss(item)}
+                            className="flex items-center gap-0.5 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-1.5 py-0.5 rounded shadow-3xs transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Sync to primary LP Tracker logs table"
+                            disabled={isSyncingId === item.id || item.delivery_status === 'ERP_CLEARED_DELIVERED'}
+                          >
+                            {isSyncingId === item.id ? (
+                              <RefreshCw className="h-2 w-2 animate-spin" />
+                            ) : (
+                              <>
+                                <ShieldAlert className="h-2.5 w-2.5" /> Loss
+                              </>
+                            )}
+                          </button>
                         </div>
                       </td>
                     </tr>

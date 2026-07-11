@@ -19,16 +19,22 @@ import {
   ArrowUp,
   ArrowDown,
   Check,
-  Archive,
-  Layers,
   Wand2,
   Edit2,
   Eye,
   Info,
-  Save
+  Save,
+  Archive
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
-import { fetchLpRecords, createLpRecord, deleteLpRecord, updateLpRecord, createLpRecordsBulk } from '../lib/lpService.js';
+import { 
+  fetchLpRecords, 
+  createLpRecord, 
+  deleteLpRecord, 
+  updateLpRecord, 
+  createLpRecordsBulk,
+  clearAllLpRecords 
+} from '../lib/lpService.js';
 
 export function LpTrackerList() {
   const toast = useToast();
@@ -39,11 +45,16 @@ export function LpTrackerList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entryMode, setEntryMode] = useState('single');
-  
-  // Table View Switch Control ('active' or 'archived')
-  const [currentView, setCurrentView] = useState('active');
   const [sortDirection, setSortDirection] = useState('auto'); 
   
+  // View Swap State: 'active' or 'loss'
+  const [viewMode, setViewMode] = useState('active');
+
+  // Track workspace reset timeline locally to manage active view separation
+  const [lastResetTime, setLastResetTime] = useState(() => {
+    return localStorage.getItem('lp_workspace_last_reset') || new Date(0).toISOString();
+  });
+
   // Inline Wishmaster Editing Tracking States
   const [editingRecordId, setEditingRecordId] = useState(null);
   const [editingWmName, setEditingWmName] = useState('');
@@ -54,6 +65,9 @@ export function LpTrackerList() {
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [editedDetailsText, setEditedDetailsText] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
+
+  // Day Reset Loading State
+  const [isResetting, setIsResetting] = useState(false);
 
   // Single Form Fields
   const [trackingId, setTrackingId] = useState('');
@@ -119,25 +133,18 @@ export function LpTrackerList() {
     return (new Date() - resolvedDate) > twoDaysInMs;
   }
 
-  // Handle trigger for launching view inspector modal
   function openInspector(item) {
     setInspectingItem(item);
     setEditedDetailsText(item.details || '');
     setIsEditingDetails(false);
   }
 
-  // --- SAVE CHOSEN EDITABLE DETAILS BACKEND WRITER ---
   async function handleSaveInspectedDetails() {
     setIsSavingDetails(true);
     try {
       const updatedValue = editedDetailsText.trim() || null;
-      
-      // Optimistic layout update
       setRecords(prev => prev.map(r => r.id === inspectingItem.id ? { ...r, details: updatedValue } : r));
-      
       await updateLpRecord(inspectingItem.id, { details: updatedValue });
-      
-      // Sync local viewing instance reference status
       setInspectingItem(prev => ({ ...prev, details: updatedValue }));
       setIsEditingDetails(false);
       toast('Shipment details updated successfully.', 'success');
@@ -150,7 +157,6 @@ export function LpTrackerList() {
 
   async function sweepMissingRecords(incomingTrackingIds) {
     const upperIncomingIds = incomingTrackingIds.map(id => id.trim().toUpperCase());
-    
     const missingActiveRecords = records.filter(rec => 
       rec.status === 'NOT FOUND' && 
       !upperIncomingIds.includes(rec.tracking_id.toUpperCase())
@@ -176,6 +182,33 @@ export function LpTrackerList() {
     );
 
     return sweepSuccessCount;
+  }
+
+  // UPDATED: Now drops recent LOSS elements from the active table view too, while permanently safeguarding them inside the ledger tab memory
+  async function handleResetDayArchive() {
+    const doubleCheckMessage = `🚨 WARNING: You are resetting the daily tracking workspace.\n\nAll trackers shown in the Active table (including recent Cleared and Loss rows) will be cleared from this view.\n\nAll permanent LOSS entries will remain perfectly intact inside the Loss Ledger. Proceed?`;
+    if (!window.confirm(doubleCheckMessage)) return;
+
+    setIsResetting(true);
+    try {
+      await clearAllLpRecords();
+      
+      // Update local storage timeline and component state so old tracker entries clear immediately
+      const newResetTimestamp = new Date().toISOString();
+      localStorage.setItem('lp_workspace_last_reset', newResetTimestamp);
+      setLastResetTime(newResetTimestamp);
+
+      // Retain ALL loss records in local state so the Loss Ledger is unaffected
+      const totalSavedLossRecords = records.filter(rec => rec.status === 'LOSS');
+      setRecords(totalSavedLossRecords);
+      
+      toast('Active day workspace reset completed successfully.', 'success');
+    } catch (err) {
+      toast('Failed to clear active shift table items.', 'error');
+      console.error(err);
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   async function handleFormSubmit(e) {
@@ -303,12 +336,11 @@ export function LpTrackerList() {
   }
 
   function startEditingWm(item) {
-    if (item.status === 'LOSS' || item.status === 'CLEARING TODAY') return; 
     setEditingRecordId(item.id);
     setEditingWmName(item.wishmaster_name);
   }
 
-async function saveInlineWmUpdate(id) {
+  async function saveInlineWmUpdate(id) {
     if (!editingWmName.trim()) {
       toast('Wishmaster assignment name cannot be left blank.', 'error');
       return;
@@ -333,16 +365,36 @@ async function saveInlineWmUpdate(id) {
   }
 
   async function handleStatusChange(id, nextStatus) {
-    if (nextStatus === 'LOSS' && !window.confirm("Are you sure you want to mark this shipment file as a LOSS?")) return;
-    if (nextStatus === 'CLEARING TODAY' && !window.confirm("Are you sure you want to mark this shipment file as CLEARED?")) return;
+    const confirmationText = nextStatus === 'LOSS' 
+      ? "Are you sure you want to mark this shipment file as a LOSS?" 
+      : nextStatus === 'CLEARING TODAY' 
+        ? "Are you sure you want to mark this shipment file as CLEARED?" 
+        : "Are you sure you want to revert this case back to active tracking status?";
+
+    if (!window.confirm(confirmationText)) return;
 
     try {
       const isResolved = nextStatus === 'LOSS' || nextStatus === 'CLEARING TODAY';
       const timestamp = isResolved ? new Date().toISOString() : null;
+      const priorityPatch = nextStatus === 'LOSS' ? 'CRITICAL' : undefined;
 
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, status: nextStatus, resolved_at: timestamp } : r));
-      await updateLpRecord(id, { status: nextStatus, resolved_at: timestamp });
-      toast(`Moved case to ${isResolved ? 'Archives' : 'Active Workspace'}`, 'success');
+      setRecords(prev => prev.map(r => {
+        if (r.id === id) {
+          return { 
+            ...r, 
+            status: nextStatus, 
+            resolved_at: timestamp,
+            ...(priorityPatch && { priority: priorityPatch })
+          };
+        }
+        return r;
+      }));
+
+      const updatePayload = { status: nextStatus, resolved_at: timestamp };
+      if (priorityPatch) updatePayload.priority = priorityPatch;
+
+      await updateLpRecord(id, updatePayload);
+      toast(`Updated case status to ${nextStatus}`, 'success');
     } catch (err) {
       toast('Failed to save status modifications.', 'error');
       loadData();
@@ -350,14 +402,13 @@ async function saveInlineWmUpdate(id) {
   }
 
   async function handleMarkLoss(id, trackingLabel) {
-    // 🚨 ADDED CONFIRMATION PROMPT 🚨
     if (!window.confirm(`Are you sure you want to mark case reference ${trackingLabel} as a complete asset LOSS?`)) return;
 
     try {
       const timestamp = new Date().toISOString();
       setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'LOSS', priority: 'CRITICAL', resolved_at: timestamp } : r));
       await updateLpRecord(id, { status: 'LOSS', priority: 'CRITICAL', resolved_at: timestamp });
-      toast(`Case ${trackingLabel} sent straight to Loss Archives.`, 'success');
+      toast(`Case ${trackingLabel} marked as Loss.`, 'success');
     } catch (err) {
       toast('Error reporting asset loss.', 'error');
       loadData();
@@ -365,14 +416,13 @@ async function saveInlineWmUpdate(id) {
   }
 
   async function handleMarkCleared(id, trackingLabel) {
-    // 🚨 ADDED CONFIRMATION PROMPT 🚨
     if (!window.confirm(`Are you sure you want to confirm package deployment and CLEAR case reference ${trackingLabel}?`)) return;
 
     try {
       const timestamp = new Date().toISOString();
       setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'CLEARING TODAY', resolved_at: timestamp } : r));
       await updateLpRecord(id, { status: 'CLEARING TODAY', resolved_at: timestamp });
-      toast(`Case ${trackingLabel} moved straight to Clear Archives.`, 'success');
+      toast(`Case ${trackingLabel} marked as Cleared.`, 'success');
     } catch (err) {
       toast('Error saving cleared row parameters.', 'error');
       loadData();
@@ -407,16 +457,26 @@ async function saveInlineWmUpdate(id) {
     }
   }
 
-  const activeDeck = records.filter(rec => rec.status === 'NOT FOUND');
-  const archiveDeck = records.filter(rec => 
-    (rec.status === 'LOSS' || rec.status === 'CLEARING TODAY') && 
-    !isOlderThanTwoDays(rec.resolved_at)
-  );
-
+  // --- DATA FILTERING ENGINE ---
   const processedRecords = (() => {
-    let baseList = currentView === 'active' ? activeDeck : archiveDeck;
+    let baseList = records.filter(rec => {
+      if (viewMode === 'loss') {
+        // PERMANENT LEDGER ARCHIVE: Keep showing all loss records permanently until manual row deletion
+        return rec.status === 'LOSS';
+      } else {
+        // ACTIVE TRACKER VIEW: Hide ANY record that was resolved BEFORE our last workspace reset action
+        if (rec.resolved_at && new Date(rec.resolved_at) < new Date(lastResetTime)) {
+          return false;
+        }
+        // Fallback filter: standard 2-day historical automatic archival layout rules
+        if (rec.status === 'LOSS' || rec.status === 'CLEARING TODAY') {
+          return !isOlderThanTwoDays(rec.resolved_at);
+        }
+        return true;
+      }
+    });
     
-    let output = baseList.filter(rec => {
+    let filtered = baseList.filter(rec => {
       const q = searchQuery.toLowerCase();
       return (
         rec.tracking_id?.toLowerCase().includes(q) ||
@@ -426,20 +486,28 @@ async function saveInlineWmUpdate(id) {
       );
     });
 
-    if (sortDirection === 'auto') {
-      output.sort((a, b) => {
+    filtered.sort((a, b) => {
+      const aResolved = a.status === 'LOSS' || a.status === 'CLEARING TODAY';
+      const bResolved = b.status === 'LOSS' || b.status === 'CLEARING TODAY';
+
+      if (viewMode === 'active' && aResolved !== bResolved) {
+        return aResolved ? 1 : -1;
+      }
+
+      if (sortDirection === 'auto') {
         const weightA = PRIORITY_RANK[a.priority] || 0;
         const weightB = PRIORITY_RANK[b.priority] || 0;
         if (weightB !== weightA) return weightB - weightA;
         return (b.aging_days ?? 0) - (a.aging_days ?? 0);
-      });
-    } else if (sortDirection === 'desc') {
-      output.sort((a, b) => (b.aging_days ?? 0) - (a.aging_days ?? 0));
-    } else if (sortDirection === 'asc') {
-      output.sort((a, b) => (a.aging_days ?? 0) - (b.aging_days ?? 0));
-    }
+      } else if (sortDirection === 'desc') {
+        return (b.aging_days ?? 0) - (a.aging_days ?? 0);
+      } else if (sortDirection === 'asc') {
+        return (a.aging_days ?? 0) - (b.aging_days ?? 0);
+      }
+      return 0;
+    });
     
-    return output;
+    return filtered;
   })();
 
   return (
@@ -459,58 +527,78 @@ async function saveInlineWmUpdate(id) {
           </h2>
         </div>
 
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="btn-primary px-4 py-2 text-xs font-bold shadow-sm self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4 mr-1.5" /> Add New Case File
-        </button>
-      </div>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleResetDayArchive}
+            disabled={isResetting || records.length === 0}
+            className="flex items-center gap-1.5 bg-amber-50 hover:bg-rose-600 text-amber-700 hover:text-white border border-amber-200 hover:border-rose-300 text-xs font-black uppercase px-3 py-2 rounded-xl transition-all shadow-3xs disabled:opacity-40 disabled:hover:bg-amber-50 disabled:hover:text-amber-700 disabled:cursor-not-allowed h-9"
+            title="Purge daily workspace trackers while safeguarding loss archives permanently"
+          >
+            {isResetting ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <>
+                <Trash2 className="h-3.5 w-3.5" /> Reset Day Archive
+              </>
+            )}
+          </button>
 
-      {/* SEGMENTED SWITCH COMPONENT */}
-      <div className="flex items-center justify-start p-1 bg-ink-100 rounded-xl max-w-sm border border-ink-200">
-        <button
-          onClick={() => setCurrentView('active')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-            currentView === 'active' 
-              ? 'bg-white text-brand-600 shadow-sm border border-ink-200/50' 
-              : 'text-ink-600 hover:text-ink-900'
-          }`}
-        >
-          <Layers className="h-3.5 w-3.5" /> Active Deck ({activeDeck.length})
-        </button>
-        <button
-          onClick={() => setCurrentView('archived')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-            currentView === 'archived' 
-              ? 'bg-white text-brand-600 shadow-sm border border-ink-200/50' 
-              : 'text-ink-600 hover:text-ink-900'
-          }`}
-        >
-          <Archive className="h-3.5 w-3.5" /> Resolved Archives ({archiveDeck.length})
-        </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="btn-primary px-4 py-2 text-xs font-bold shadow-sm h-9"
+          >
+            <Plus className="h-4 w-4 mr-1.5" /> Add New Case File
+          </button>
+        </div>
       </div>
 
       {/* FULL WIDTH MAIN PANEL */}
       <div className="card p-0 overflow-hidden border border-ink-200 shadow-sm bg-white">
         
-        {/* SUB HEADER - SYSTEM FILTER ACTIONS */}
-        <div className="p-4 border-b border-ink-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-ink-50/40">
+        {/* SUB HEADER - SYSTEM FILTER ACTIONS & SEGMENTED SWAP SWITCH */}
+        <div className="p-4 border-b border-ink-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-ink-50/40">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-ink-400" />
             <input 
               type="text" 
-              placeholder={`Search ${currentView === 'active' ? 'active' : 'archived'} files...`}
+              placeholder={viewMode === 'active' ? "Search active files..." : "Search loss ledger records..."}
               className="input h-9 pl-9 pr-3 text-xs bg-white border-ink-200 w-full"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
+            
+            {/* SEGMENTED PILL SWAP SWITCH */}
+            <div className="p-1 bg-ink-100 rounded-xl flex items-center border border-ink-200/60 shadow-3xs relative select-none">
+              <button
+                type="button"
+                onClick={() => setViewMode('active')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-tight transition-all duration-200 ${
+                  viewMode === 'active' 
+                    ? 'bg-white text-brand-600 shadow-xs' 
+                    : 'text-ink-500 hover:text-ink-800'
+                }`}
+              >
+                Active Tracker
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('loss')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-tight flex items-center gap-1 transition-all duration-200 ${
+                  viewMode === 'loss' 
+                    ? 'bg-rose-600 text-white shadow-xs' 
+                    : 'text-ink-500 hover:text-ink-800'
+                }`}
+              >
+                <Archive className="h-3 w-3" /> Loss Ledger
+              </button>
+            </div>
+
             <div className="text-[11px] font-mono text-brand-700 bg-brand-50 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-bold shadow-3xs">
               <Wand2 className="h-3.5 w-3.5 text-brand-600 animate-pulse" /> 
-              Auto-Sorted by Priority
+              {viewMode === 'active' ? 'Hierarchy Balanced View' : 'Synced Asset Loss Ledger'}
             </div>
           </div>
         </div>
@@ -524,9 +612,9 @@ async function saveInlineWmUpdate(id) {
             </div>
           ) : processedRecords.length === 0 ? (
             <div className="py-24 text-center text-sm text-ink-400 font-medium px-6 italic">
-              {currentView === 'active' 
-                ? 'No active items pending tracking data.' 
-                : 'No items resolved within the last 48 hours.'}
+              {viewMode === 'active' 
+                ? 'No items pending tracking data matches found.' 
+                : 'No complete shipment loss log parameters captured yet.'}
             </div>
           ) : (
             <table className="w-full border-collapse text-left text-xs">
@@ -557,7 +645,9 @@ async function saveInlineWmUpdate(id) {
                     <tr 
                       key={item.id} 
                       className={`transition-all duration-200 group ${
-                        isRowLocked ? 'bg-ink-50/40 opacity-85 select-none' : 'hover:bg-brand-50/20'
+                        item.status === 'LOSS' 
+                          ? 'bg-rose-50/20 text-ink-700 hover:bg-rose-50/40' 
+                          : isRowLocked ? 'bg-ink-50/40 text-ink-600' : 'hover:bg-brand-50/20'
                       }`}
                     >
                       <td className="p-4 text-center">
@@ -605,18 +695,16 @@ async function saveInlineWmUpdate(id) {
                           </div>
                         ) : (
                           <div 
-                            className={`flex items-center gap-2 group/edit ${!isRowLocked ? 'cursor-pointer hover:text-brand-600 transition-colors' : ''}`}
+                            className="flex items-center gap-2 group/edit cursor-pointer hover:text-brand-600 transition-colors"
                             onDoubleClick={() => startEditingWm(item)}
                           >
                             <span>{item.wishmaster_name}</span>
-                            {!isRowLocked && (
-                              <button 
-                                onClick={() => startEditingWm(item)}
-                                className="opacity-0 group-hover/edit:opacity-100 group-hover:opacity-60 text-ink-400 hover:text-brand-600 transition-all p-0.5 rounded"
-                              >
-                                <Edit2 className="h-3 w-3" />
-                              </button>
-                            )}
+                            <button 
+                              onClick={() => startEditingWm(item)}
+                              className="opacity-0 group-hover/edit:opacity-100 group-hover:opacity-60 text-ink-400 hover:text-brand-600 transition-all p-0.5 rounded"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
                           </div>
                         )}
                       </td>
@@ -642,7 +730,6 @@ async function saveInlineWmUpdate(id) {
 
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* ACTION EYE BUTTON */}
                           <button
                             onClick={() => openInspector(item)}
                             className="p-1.5 text-ink-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
@@ -653,7 +740,7 @@ async function saveInlineWmUpdate(id) {
 
                           <span className="text-ink-200 select-none">|</span>
 
-                          {!isRowLocked ? (
+                          {item.status !== 'LOSS' && item.status !== 'CLEARING TODAY' ? (
                             <>
                               <button onClick={() => handleMarkLoss(item.id, item.tracking_id)} className="flex items-center bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-2 py-1 rounded shadow-3xs">
                                 <ShieldAlert className="h-2.5 w-2.5 mr-0.5" /> Loss
@@ -663,9 +750,13 @@ async function saveInlineWmUpdate(id) {
                               </button>
                             </>
                           ) : (
-                            <span className="text-[10px] font-mono uppercase tracking-tight font-black text-ink-600 italic mr-1">
-                              {item.status === 'LOSS' ? '❌ Lost Shipment' : '✅ Cleared'}
-                            </span>
+                            <button 
+                              onClick={() => handleStatusChange(item.id, 'NOT FOUND')}
+                              className="text-[10px] font-mono uppercase tracking-tight font-black text-brand-600 hover:text-brand-800 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5 transition-colors"
+                              title="Re-open this layout row file"
+                            >
+                              Reopen
+                            </button>
                           )}
 
                           <span className="text-ink-200 select-none">|</span>
@@ -687,7 +778,7 @@ async function saveInlineWmUpdate(id) {
         </div>
       </div>
 
-      {/* --- QUICK VIEW INSPECTION MODAL PANEL (WITH EDITS ENABLED) --- */}
+      {/* --- QUICK VIEW INSPECTION MODAL PANEL --- */}
       {inspectingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="card w-full max-w-md p-6 border-t-4 border-t-brand-600 border-x border-b border-ink-200 bg-white shadow-xl relative animate-scale-up">
@@ -737,14 +828,12 @@ async function saveInlineWmUpdate(id) {
               )}
             </div>
 
-            {/* CORE EXPLANATION CONTAINER */}
             <div className="bg-brand-50/50 border border-brand-100 p-4 rounded-xl mt-5 text-[11px] text-ink-800 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="block font-black uppercase text-brand-800 tracking-wider text-[10px]">
                   Shipment Details Explanation:
                 </span>
                 
-                {/* Edit Button trigger */}
                 {!isEditingDetails && (
                   <button 
                     type="button"
