@@ -10,6 +10,8 @@ import { UnmaskTrackingIds } from './pages/UnmaskTrackingIds.jsx';
 
 import { LpTrackerList } from './pages/LpTrackerList.jsx';
 import { ManualDeliveryTracker } from './pages/ManualDeliveryTracker.jsx';
+import { WishmasterVendorManager } from './pages/WishmasterVendorManager.jsx';
+import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
 
 function App() {
   return (
@@ -23,7 +25,9 @@ function App() {
             <Route path="/bulk" element={<BulkBarcodes />} />
             <Route path="/unmask" element={<UnmaskTrackingIds />} />
             <Route path="/lp" element={<LpTrackerList />} />
+            <Route path="/vendors" element={<WishmasterVendorManager />} />
             <Route path="/history" element={<LabelHistory />} />
+            <Route path="/lossgen" element={<WmLossEmailGenerator />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
           </Routes>
