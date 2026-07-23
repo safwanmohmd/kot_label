@@ -14,6 +14,7 @@ import {
   Users,
   MailPlus,
   X,
+  FileCode,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -24,6 +25,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
       { to: '/create', label: 'Create Label', icon: PlusCircle },
+      { to: '/create-prn', label: 'PRN Label Generator', icon: FileCode },
       { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
       { to: '/history', label: 'Label History', icon: History },
     ]
@@ -41,6 +43,12 @@ const NAV_GROUPS = [
     items: [
       { to: '/vendors', label: 'Vendor Directory', icon: Users },
       { to: '/lossgen', label: 'Loss Log Email Gen', icon: MailPlus },
+    ]
+  },
+  {
+    groupLabel: 'System & Config',
+    items: [
+      { to: '/settings', label: 'Settings', icon: Settings },
     ]
   }
 ];

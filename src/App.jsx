@@ -12,6 +12,7 @@ import { LpTrackerList } from './pages/LpTrackerList.jsx';
 import { ManualDeliveryTracker } from './pages/ManualDeliveryTracker.jsx';
 import { WishmasterVendorManager } from './pages/WishmasterVendorManager.jsx';
 import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
+import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/create" element={<CreateLabel />} />
+            <Route path="/create-prn" element={<CreatePrnLabel />} />
             <Route path="/create/:id" element={<CreateLabel />} />
             <Route path="/bulk" element={<BulkBarcodes />} />
             <Route path="/unmask" element={<UnmaskTrackingIds />} />
