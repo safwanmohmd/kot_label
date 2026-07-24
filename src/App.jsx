@@ -13,6 +13,7 @@ import { ManualDeliveryTracker } from './pages/ManualDeliveryTracker.jsx';
 import { WishmasterVendorManager } from './pages/WishmasterVendorManager.jsx';
 import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
 import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
+import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
             <Route path="/bulk" element={<BulkBarcodes />} />
             <Route path="/unmask" element={<UnmaskTrackingIds />} />
             <Route path="/lp" element={<LpTrackerList />} />
+            <Route path="/eod" element={<EodReportGenerator />} />
             <Route path="/vendors" element={<WishmasterVendorManager />} />
             <Route path="/history" element={<LabelHistory />} />
             <Route path="/lossgen" element={<WmLossEmailGenerator />} />

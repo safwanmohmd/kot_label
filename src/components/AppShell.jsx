@@ -15,6 +15,7 @@ import {
   MailPlus,
   X,
   FileCode,
+  FileSpreadsheet, // Added for EOD Report icon
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -33,6 +34,7 @@ const NAV_GROUPS = [
   {
     groupLabel: 'Tracking & Inspection',
     items: [
+      { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet }, // NEW EOD ITEM
       { to: '/unmask', label: 'Unmask Deck', icon: Eye },
       { to: '/lp', label: 'Lp Tracker', icon: ShieldAlert },
       { to: '/manualdelivery', label: 'Manual Delivery', icon: Truck },
@@ -143,9 +145,9 @@ function SidebarContent({ onNavigate }) {
   return (
     <>
       {/* BRAND HEADER DISPLAY LOGO BOX */}
-      <div className="h-16 flex items-center gap-2.5 px-5 border-b border-ink-800">
-        <div className="h-9 w-9 rounded-lg bg-brand-600 flex items-center justify-center">
-          <Package className="h-5 w-5 text-white" />
+      <div className="h-16 flex items-center gap-2.5 px-4 border-b border-ink-800">
+        <div className="h-8 w-8 rounded-lg bg-brand-600 flex items-center justify-center">
+          <Package className="h-4 w-4 text-white" />
         </div>
         <div>
           <p className="text-sm font-bold text-white">KOT</p>
@@ -153,12 +155,12 @@ function SidebarContent({ onNavigate }) {
         </div>
       </div>
 
-      {/* SCROLLABLE CATEGORIZED SIDE NAVIGATION CONTROLLER */}
-      <nav className="flex-1 py-4 px-3 space-y-5 overflow-y-auto">
+      {/* SCROLLABLE CATEGORIZED SIDE NAVIGATION CONTROLLER (COMPACT LAYOUT) */}
+      <nav className="flex-1 py-3 px-2.5 space-y-3.5 overflow-y-auto">
         {NAV_GROUPS.map((group) => (
-          <div key={group.groupLabel} className="space-y-1">
+          <div key={group.groupLabel} className="space-y-0.5">
             {/* SUB-CATEGORY DESCRIPTIONS SEPARATORS */}
-            <h3 className="px-3 text-[9px] font-bold text-ink-500 uppercase tracking-widest mb-1.5">
+            <h3 className="px-2.5 text-[9px] font-bold text-ink-500 uppercase tracking-widest mb-1">
               {group.groupLabel}
             </h3>
             
@@ -172,14 +174,14 @@ function SidebarContent({ onNavigate }) {
                     end={item.end}
                     onClick={onNavigate}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+                      `flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
                         isActive
                           ? 'bg-brand-600 text-white font-semibold'
                           : 'text-ink-300 hover:bg-ink-800/60 hover:text-white'
                       }`
                     }
                   >
-                    <Icon className="h-4.5 w-4.5 flex-shrink-0" />
+                    <Icon className="h-4 w-4 flex-shrink-0" />
                     <span>{item.label}</span>
                   </NavLink>
                 );
@@ -190,13 +192,13 @@ function SidebarContent({ onNavigate }) {
       </nav>
 
       {/* CONSOLE STATUS FOOTER META CARD */}
-      <div className="p-3 border-t border-ink-800">
-        <div className="rounded-lg bg-ink-800/40 p-2.5 border border-ink-800/60">
-          <div className="flex items-center gap-2 mb-0.5">
+      <div className="p-2.5 border-t border-ink-800">
+        <div className="rounded-lg bg-ink-800/40 p-2 border border-ink-800/60">
+          <div className="flex items-center gap-1.5 mb-0.5">
             <Layers className="h-3.5 w-3.5 text-brand-400" />
             <p className="text-[11px] font-bold text-white">Courier API Ready</p>
           </div>
-          <p className="text-[10px] text-ink-400 leading-normal">
+          <p className="text-[10px] text-ink-400 leading-tight">
             Structure supports integration vectors via regional endpoint routing models.
           </p>
         </div>
@@ -204,6 +206,3 @@ function SidebarContent({ onNavigate }) {
     </>
   );
 }
-
-
-
