@@ -33,7 +33,7 @@ export function BulkBarcodes() {
   // --- EXCLUSION FILTER CONFIGURATION STATES ---
   const [enableExclusions, setEnableExclusions] = useState(true);
   const [excludeWordsInput, setExcludeWordsInput] = useState(
-    'FORWARD, UNDELIVERED, P2, FLIPKART, ESCALATION, VERIFICATION, SHIPMENTS, PACKAGING, MANDATORY'
+    'FORWARD, UNDELIVERED, FLIPKART, ESCALATION, VERIFICATION, SHIPMENTS, PACKAGING, MANDATORY'
   );
   
   // --- LOCAL STORAGE HISTORY STATE ---
@@ -365,7 +365,7 @@ export function BulkBarcodes() {
               }`}
               value={excludeWordsInput}
               onChange={(e) => setExcludeWordsInput(e.target.value)}
-              placeholder="e.g., FORWARD, UNDELIVERED, P2"
+              placeholder="e.g., FORWARD, UNDELIVERED, "
             />
           </div>
 
