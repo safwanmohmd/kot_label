@@ -7,8 +7,7 @@ import {
   RefreshCw, 
   Trash2, 
   UserCheck, 
-  Database,
-  FileText
+  Database
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { 
@@ -23,6 +22,7 @@ export function WishmasterVendorManager() {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
   // Single entry form states
   const [singleName, setSingleName] = useState('');
@@ -38,8 +38,9 @@ export function WishmasterVendorManager() {
     setLoading(true);
     try {
       const data = await fetchVendors();
-      setVendors(data);
+      setVendors(data || []);
     } catch (err) {
+      console.error('Fetch error:', err);
       toast('Failed to download Wishmaster mappings.', 'error');
     } finally {
       setLoading(false);
@@ -57,7 +58,6 @@ export function WishmasterVendorManager() {
       return;
     }
 
-    // Handles tab-spaces from spreadsheets or simple spacing configs line-by-line
     const lines = bulkRawInput.split('\n');
     const results = [];
 
@@ -65,13 +65,11 @@ export function WishmasterVendorManager() {
       const trimmed = line.trim();
       if (!trimmed) return;
 
-      // Extract the terminal block (Vendor ID looks like EFTK000360) and keep the name leftside
-      const parts = trimmed.split(/\t/); // First match spreadsheet tab keys
+      const parts = trimmed.split(/\t/);
       
       if (parts.length >= 2) {
         results.push({ wm_name: parts[0].trim(), vendor_id: parts[1].trim().toUpperCase() });
       } else {
-        // Fallback for space-delimited text if pasted as standard raw line entries
         const matches = trimmed.match(/(.+)\s+(EFTK\d+|[A-Z0-9]+)$/i);
         if (matches) {
           results.push({ wm_name: matches[1].trim(), vendor_id: matches[2].trim().toUpperCase() });
@@ -97,6 +95,7 @@ export function WishmasterVendorManager() {
       setSingleId('');
       await loadVendorData();
     } catch (err) {
+      console.error('Single submit error:', err);
       toast(err.message || 'Error inserting database entry.', 'error');
     } finally {
       setIsSubmittingSingle(false);
@@ -114,6 +113,7 @@ export function WishmasterVendorManager() {
       setParsedPreview([]);
       await loadVendorData();
     } catch (err) {
+      console.error('Bulk submit error:', err);
       toast('Ingestion error, verify mapping structures or duplicates.', 'error');
     } finally {
       setIsSubmittingBulk(false);
@@ -121,14 +121,30 @@ export function WishmasterVendorManager() {
   }
 
   async function handleDelete(item) {
+    if (!item.id) {
+      console.error('Delete target missing primary key "id":', item);
+      toast('Cannot delete: Record primary key "id" is missing.', 'error');
+      return;
+    }
+
     if (!window.confirm(`Permanently remove identifier mapping for ${item.wm_name}?`)) return;
+
+    setDeletingId(item.id);
     try {
-      setVendors(prev => prev.filter(v => v.id !== item.id));
+      // 1. Delete from database FIRST
       await deleteVendorRecord(item.id);
+
+      // 2. Remove from local UI state ONLY after successful DB confirmation
+      setVendors(prev => prev.filter(v => v.id !== item.id));
       toast('Vendor record purged successfully.', 'success');
     } catch (err) {
-      toast('Database write transaction execution dropped.', 'error');
+      console.error('Delete execution error:', err);
+      toast(err.message || 'Database write failed. Refreshing state...', 'error');
+      
+      // Re-fetch to sync true state
       await loadVendorData();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -200,7 +216,11 @@ export function WishmasterVendorManager() {
                   onChange={e => setSingleId(e.target.value)}
                 />
               </div>
-              <button type="submit" disabled={isSubmittingSingle} className="btn-primary w-full h-7 text-[11px] font-bold justify-center mt-1 bg-ink-900 text-white hover:bg-ink-800 rounded">
+              <button 
+                type="submit" 
+                disabled={isSubmittingSingle} 
+                className="btn-primary w-full h-7 text-[11px] font-bold justify-center mt-1 bg-ink-900 text-white hover:bg-ink-800 rounded disabled:opacity-50"
+              >
                 {isSubmittingSingle ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'Commit Mappings'}
               </button>
             </form>
@@ -240,7 +260,7 @@ export function WishmasterVendorManager() {
                   <button 
                     onClick={handleBulkSubmit}
                     disabled={isSubmittingBulk}
-                    className="w-full text-center py-1 mt-1 font-bold bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] rounded transition-colors flex items-center justify-center gap-1"
+                    className="w-full text-center py-1 mt-1 font-bold bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] rounded transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
                   >
                     {isSubmittingBulk ? <RefreshCw className="h-2.5 w-2.5 animate-spin" /> : 'Bulk Sync Array to Supabase'}
                   </button>
@@ -289,10 +309,15 @@ export function WishmasterVendorManager() {
                       <td className="p-2.5 text-center">
                         <button
                           onClick={() => handleDelete(item)}
-                          className="p-1 rounded text-ink-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                          disabled={deletingId === item.id}
+                          className="p-1 rounded text-ink-400 hover:text-rose-600 hover:bg-rose-50 transition-all disabled:opacity-30"
                           title="Delete Mapping Record"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          {deletingId === item.id ? (
+                            <RefreshCw className="h-3 w-3 animate-spin text-rose-600" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
                         </button>
                       </td>
                     </tr>

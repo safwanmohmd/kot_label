@@ -61,6 +61,7 @@ export function UnmaskTrackingIds() {
         return;
       }
 
+      // CHANGED: Map now stores an ARRAY of matching full IDs instead of just one string
       const lookupMap = new Map();
       rawOriginals.forEach(line => {
         const cleanId = line.toUpperCase();
@@ -70,8 +71,9 @@ export function UnmaskTrackingIds() {
           const key = `${prefix}_${suffix}`;
           
           if (!lookupMap.has(key)) {
-            lookupMap.set(key, line);
+            lookupMap.set(key, []);
           }
+          lookupMap.get(key).push(line);
         }
       });
 
@@ -89,16 +91,25 @@ export function UnmaskTrackingIds() {
         const searchKey = `${prefix}_${suffix}`;
 
         if (lookupMap.has(searchKey)) {
-          computedResults.push({
-            maskedId: line,
-            matchedId: lookupMap.get(searchKey),
-            status: 'Found'
+          const matchedList = lookupMap.get(searchKey);
+          
+          // CHANGED: Push an entry for EVERY possible matched master tracking ID
+          matchedList.forEach((fullId, index) => {
+            computedResults.push({
+              maskedId: line,
+              matchedId: fullId,
+              status: 'Found',
+              matchCount: matchedList.length,
+              matchIndex: index + 1
+            });
           });
         } else {
           computedResults.push({
             maskedId: line,
             matchedId: '—',
-            status: 'Not Found'
+            status: 'Not Found',
+            matchCount: 0,
+            matchIndex: 0
           });
         }
       });
@@ -109,20 +120,23 @@ export function UnmaskTrackingIds() {
   };
 
   const stats = useMemo(() => {
-    const total = results.length;
+    const totalMasked = parseAndCleanLines(maskedInput).length;
     const found = results.filter(r => r.status === 'Found').length;
     const notFound = results.filter(r => r.status === 'Not Found').length;
-    return { total, found, notFound };
-  }, [results]);
+    return { totalMasked, totalRows: results.length, found, notFound };
+  }, [results, maskedInput]);
 
-  // CHANGED: Filters out 'Not Found' / 'Invalid' rows so ONLY matched true IDs hit your clipboard
   const handleCopyResults = () => {
     if (results.length === 0) return;
     
-    const matchedIdsOnly = results
-      .filter(r => r.status === 'Found')
-      .map(r => r.matchedId)
-      .join('\n');
+    // Copies unique matched tracking IDs
+    const matchedIdsOnly = Array.from(
+      new Set(
+        results
+          .filter(r => r.status === 'Found')
+          .map(r => r.matchedId)
+      )
+    ).join('\n');
 
     if (!matchedIdsOnly) {
       setToastMessage('No successful matches found to copy!');
@@ -136,10 +150,10 @@ export function UnmaskTrackingIds() {
   const handleExportCSV = () => {
     if (results.length === 0) return;
     const csvContent = [
-      ['Masked ID', 'Matched Full ID', 'Status'],
-      ...results.map(r => [r.maskedId, r.matchedId, r.status])
+      ['Masked ID', 'Matched Full ID', 'Status', 'Possible Matches Count'],
+      ...results.map(r => [r.maskedId, r.matchedId, r.status, r.matchCount || 0])
     ]
-      .map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
+      .map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
       .join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -161,7 +175,7 @@ export function UnmaskTrackingIds() {
   return (
     <div className="space-y-6 animate-fade-in max-w-7xl mx-auto p-4 relative">
       
-      {/* Toast Banner Notification element */}
+      {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50 flex items-center gap-2 bg-neutral-900 text-white px-4 py-3 rounded-xl shadow-xl border border-neutral-700 animate-slide-in font-medium text-sm">
           <Bell className="h-4 w-4 text-emerald-400" />
@@ -169,7 +183,7 @@ export function UnmaskTrackingIds() {
         </div>
       )}
 
-      {/* App Header Bar */}
+      {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-ink-100 shadow-sm">
         <div>
           <h1 className="text-lg font-bold text-ink-900 flex items-center gap-2">
@@ -196,7 +210,7 @@ export function UnmaskTrackingIds() {
         </div>
       </div>
 
-      {/* Workspace Setup */}
+      {/* Workspace Inputs */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -208,7 +222,7 @@ export function UnmaskTrackingIds() {
                 className="w-full min-h-[260px] p-3 border border-ink-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 flex-1 resize-y"
                 value={originalInput}
                 onChange={(e) => setOriginalInput(e.target.value)}
-                placeholder={`Paste absolute true codes here...\n\nFMPC4101158571\nBSRC0000018120`}
+                placeholder={`Paste absolute true codes here...\n\nFMPC4101158571\nFMPC8881158571\nBSRC0000018120`}
               />
             </div>
 
@@ -220,7 +234,7 @@ export function UnmaskTrackingIds() {
                 className="w-full min-h-[260px] p-3 border border-ink-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 flex-1 resize-y"
                 value={maskedInput}
                 onChange={(e) => setMaskedInput(e.target.value)}
-                placeholder={`Paste masked text blocks...\n\narrow_righsdasFMPCXXX5105\nBSRCXXX9994`}
+                placeholder={`Paste masked text blocks...\n\narrow_righsdasFMPCXXX8571\nBSRCXXX8120`}
               />
             </div>
           </div>
@@ -257,6 +271,7 @@ export function UnmaskTrackingIds() {
                     <tr>
                       <th className="px-4 py-2 text-xs font-bold text-ink-600 uppercase tracking-wider">Scrubbed Masked ID</th>
                       <th className="px-4 py-2 text-xs font-bold text-ink-600 uppercase tracking-wider">Matched Full ID</th>
+                      <th className="px-4 py-2 text-xs font-bold text-ink-600 uppercase tracking-wider text-center">Matches</th>
                       <th className="px-4 py-2 text-xs font-bold text-ink-600 uppercase tracking-wider text-center">Status</th>
                     </tr>
                   </thead>
@@ -266,6 +281,17 @@ export function UnmaskTrackingIds() {
                         <td className="px-4 py-2.5 select-all">{row.maskedId}</td>
                         <td className={`px-4 py-2.5 select-all font-bold ${row.status === 'Found' ? 'text-brand-700' : 'text-ink-400'}`}>
                           {row.matchedId}
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-[11px] text-ink-500 font-sans">
+                          {row.matchCount > 1 ? (
+                            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">
+                              {row.matchIndex} of {row.matchCount}
+                            </span>
+                          ) : row.matchCount === 1 ? (
+                            <span className="text-ink-400">1 of 1</span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="px-4 py-2.5 whitespace-nowrap text-center">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -292,7 +318,6 @@ export function UnmaskTrackingIds() {
 
         {/* Sidebar Panel */}
         <div className="space-y-5">
-          {/* Prefix Scrub Filter Input Box */}
           <div className="bg-white p-5 rounded-xl border border-amber-200 shadow-sm bg-amber-50/10">
             <div className="flex items-center gap-1.5 text-amber-800 font-bold text-sm mb-2">
               <Trash2 className="h-4 w-4 text-amber-600" />
@@ -313,11 +338,11 @@ export function UnmaskTrackingIds() {
             <h3 className="text-sm font-bold text-ink-900 mb-4">Verification Statistics</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-ink-700">
-                <span>Lines Verified</span>
-                <span className="font-mono font-bold text-ink-900">{stats.total}</span>
+                <span>Masked Input Lines</span>
+                <span className="font-mono font-bold text-ink-900">{stats.totalMasked}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-ink-700">
-                <span>Successfully Unmasked</span>
+                <span>Total Matches Generated</span>
                 <span className="font-mono font-bold text-green-600">{stats.found}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-ink-700">
