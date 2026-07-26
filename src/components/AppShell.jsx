@@ -15,7 +15,8 @@ import {
   MailPlus,
   X,
   FileCode,
-  FileSpreadsheet, // Added for EOD Report icon
+  FileSpreadsheet,
+  PackageCheck, // Added for Return Verification icon
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -34,7 +35,8 @@ const NAV_GROUPS = [
   {
     groupLabel: 'Tracking & Inspection',
     items: [
-      { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet }, // NEW EOD ITEM
+      { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet },
+      { to: '/verifytid', label: 'Return Verification', icon: PackageCheck }, // ADDED RETURN VERIFICATION
       { to: '/unmask', label: 'Unmask Deck', icon: Eye },
       { to: '/lp', label: 'Lp Tracker', icon: ShieldAlert },
       { to: '/manualdelivery', label: 'Manual Delivery', icon: Truck },

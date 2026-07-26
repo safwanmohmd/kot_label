@@ -14,6 +14,7 @@ import { WishmasterVendorManager } from './pages/WishmasterVendorManager.jsx';
 import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
 import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
 import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
+import { WishmasterReturnVerification } from './pages/ReturnVerification.jsx';
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
             <Route path="/lossgen" element={<WmLossEmailGenerator />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
+            <Route path="/verifytid" element={<WishmasterReturnVerification />} />
           </Routes>
         </AppShell>
       </BrowserRouter>

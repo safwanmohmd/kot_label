@@ -61,16 +61,17 @@ const EMPTY = {
   show_second_barcode: true,
 };
 
-// Generates raw PRN ZPL string with aligned vertical backup barcode
+// Generates raw PRN ZPL string with properly scaled & aligned vertical backup barcode
 function generatePrnContent(form) {
   const line1 = form.address_line1 ? `^FT20,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
   const line2 = form.address_line2 ? `^FT20,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
   
   const backupData = form.notes || form.tracking_id || '';
   
-  // ^BCR rotates barcode 90 degrees clockwise
+  // ^BY2,3,50 provides clean scaling for vertical backup barcode
+  // ^FT620,30 positions the 90-degree rotated barcode accurately on the right edge
   const secondBarcodeZpl = form.show_second_barcode && backupData
-    ? `^BY1.5,2,35^FT610,140^BCR,,N,N,N,A\n^FD${backupData}^FS\n`
+    ? `^BY2,3,50^FT620,30^BCR,,N,N,N,A\n^FD${backupData}^FS\n`
     : '';
 
   return `CT~~CD,~CC^~CT~
@@ -97,15 +98,15 @@ function generatePrnContent(form) {
 ^LL467
 ^LS0
 ^FO16,16^GB637,435,3^FS
-^FO16,70^GB550,0,2^FS
+^FO16,70^GB520,0,2^FS
 ^FT30,52^A0N,28,30^CI28^FDKOT-PRN | ${form.courier_name || 'COURIER'}^FS^CI27
 ^FT20,100^A0N,18,18^CI28^FDSHIP TO:^FS^CI27
 ^FT20,124^A0N,24,24^CI28^FD${form.receiver_name || ''}^FS^CI27
 ${line1}${line2}
 ^FT20,220^A0N,20,20^CI28^FDCITY: ${form.receiver_city || ''}  |  PIN: ${form.receiver_postal_code || ''}^FS^CI27
-^FO16,240^GB550,0,2^FS
+^FO16,240^GB520,0,2^FS
 ^FT20,275^A0N,22,22^CI28^FDORDER ID: ${form.notes || '-'}^FS^CI27
-${secondBarcodeZpl}^FO16,290^GB550,0,2^FS
+${secondBarcodeZpl}^FO16,290^GB520,0,2^FS
 ^BY2.2,3,75^FT30,395^BCN,,N,N,N,A
 ^FD${form.tracking_id || ''}^FS
 ^FT30,425^A0N,28,32^CI28^FD${form.tracking_id || ''}^FS^CI27
@@ -126,14 +127,14 @@ function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayV
       height: height,
       displayValue: displayValue,
       font: 'monospace',
-      fontSize: 16,
+      fontSize: 14,
       margin: 0,
       background: 'transparent',
       lineColor: '#000000',
     });
     return svg.outerHTML;
   } catch (e) {
-    return `<div style="font-family: monospace; font-size: 16px;">${trackingId}</div>`;
+    return `<div style="font-family: monospace; font-size: 14px;">${trackingId}</div>`;
   }
 }
 
@@ -666,15 +667,15 @@ export function PrnLabelPreview({ form }) {
     }
   }, [form.tracking_id, form.barcode_type]);
 
-  // Secondary Backup Barcode
+  // Secondary Backup Barcode (Properly sized & rendered without overflowing layout)
   useEffect(() => {
     const backupValue = form.notes || form.tracking_id;
     if (secondaryBarcodeSvgRef.current && form.show_second_barcode && backupValue) {
       try {
         JsBarcode(secondaryBarcodeSvgRef.current, sanitizeForCode39(backupValue), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
-          width: 1.4,
-          height: 35,
+          width: 1.8,
+          height: 48,
           displayValue: false,
           margin: 0,
           background: 'transparent',
@@ -710,27 +711,38 @@ export function PrnLabelPreview({ form }) {
           padding: '16px',
         }}
       >
-        {/* Rotated Secondary Backup Barcode on Right Edge (Aligned Fix) */}
+        {/* Correctly Aligned Rotated Secondary Backup Barcode */}
         {form.show_second_barcode && (
           <div
             style={{
               position: 'absolute',
-              right: '20px',
-              top: '140px',
-              transform: 'rotate(90deg)',
-              transformOrigin: 'center right',
+              right: '24px',
+              top: '24px',
+              width: '60px',
+              height: '380px',
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
-              backgroundColor: '#ffffff',
-              padding: '2px 4px',
+              justifyContent: 'center',
               zIndex: 10,
             }}
           >
-            <svg ref={secondaryBarcodeSvgRef}></svg>
-            <span style={{ fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold', marginTop: '2px' }}>
-              {form.notes || form.tracking_id || 'BACKUP'}
-            </span>
+            <div
+              style={{
+                transform: 'rotate(90deg)',
+                transformOrigin: 'center center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                backgroundColor: '#ffffff',
+                padding: '2px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <svg ref={secondaryBarcodeSvgRef}></svg>
+              <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', marginTop: '2px' }}>
+                {form.notes || form.tracking_id || 'BACKUP'}
+              </span>
+            </div>
           </div>
         )}
 
@@ -852,7 +864,7 @@ function renderPrnLabelHtml(form) {
   const primaryBarcodeSvg = generateBarcodeSvgString(form.tracking_id, form.barcode_type, 70, false);
   const backupValue = form.notes || form.tracking_id;
   const secondaryBarcodeSvg = form.show_second_barcode && backupValue 
-    ? generateBarcodeSvgString(backupValue, form.barcode_type, 35, false)
+    ? generateBarcodeSvgString(backupValue, form.barcode_type, 48, false)
     : '';
 
   return `
@@ -871,19 +883,28 @@ function renderPrnLabelHtml(form) {
       ${secondaryBarcodeSvg ? `
         <div style="
           position: absolute;
-          right: 20px;
-          top: 140px;
-          transform: rotate(90deg);
-          transform-origin: center right;
+          right: 24px;
+          top: 24px;
+          width: 60px;
+          height: 380px;
           display: flex;
-          flex-direction: column;
           align-items: center;
-          background-color: #ffffff;
-          padding: 2px 4px;
+          justify-content: center;
           z-index: 10;
         ">
-          ${secondaryBarcodeSvg}
-          <span style="font-size: 10px; font-family: monospace; font-weight: bold; margin-top: 2px;">${backupValue}</span>
+          <div style="
+            transform: rotate(90deg);
+            transform-origin: center center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #ffffff;
+            padding: 2px;
+            white-space: nowrap;
+          ">
+            ${secondaryBarcodeSvg}
+            <span style="font-size: 11px; font-family: monospace; font-weight: bold; margin-top: 2px;">${backupValue}</span>
+          </div>
         </div>
       ` : ''}
 
