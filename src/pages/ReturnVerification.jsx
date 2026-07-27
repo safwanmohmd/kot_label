@@ -14,8 +14,6 @@ import {
   History,
   Trash2,
   Save,
-  Sparkles,
-  ArrowUpRight,
   ShieldCheck,
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
@@ -25,6 +23,14 @@ const HISTORY_KEY = 'wm_returns_saved_history_v1';
 
 export function WishmasterReturnVerification() {
   const toast = useToast();
+
+  // Helper to extract strictly 5-character alphanumeric Tracking IDs
+  const extractValid5CharTids = (input) => {
+    if (!input) return [];
+    // Matches all exact 5-character alphanumeric chunks
+    const matches = input.toUpperCase().match(/[A-Z0-9]{5}/g);
+    return matches ? matches : [];
+  };
 
   // --- STATE WITH LOCALSTORAGE INITIALIZATION (SURVIVES PAGE REFRESH) ---
   const [expectedIds, setExpectedIds] = useState(() => {
@@ -166,23 +172,47 @@ export function WishmasterReturnVerification() {
     toast('Started a new fresh verification session', 'info');
   };
 
-  // Copy helper
-  const handleCopyToClipboard = (text, label) => {
-    if (!text || text.trim() === '') {
+  // --- ENHANCED COPY HANDLER WITH MISMATCH & DUPLICATE CHECKS ---
+  const handleCopyScannedWithValidation = (idList, label, type) => {
+    if (!idList || idList.length === 0) {
       toast(`No ${label} data to copy!`, 'error');
       return;
     }
-    navigator.clipboard.writeText(text);
-    toast(`Copied ${label} to clipboard!`, 'success');
+
+    // 1. Check for Duplicate Scanned Tracking IDs
+    if (type === 'scanned') {
+      const uniqueScanned = new Set(scannedIds);
+      if (uniqueScanned.size !== scannedIds.length) {
+        toast(`Cannot copy: Duplicate tracking IDs detected in scanned list!`, 'error');
+        return;
+      }
+
+      // 2. Check for Mismatches (Extra / Unassigned Items)
+      if (extra.length > 0) {
+        toast(`Cannot copy: ${extra.length} mismatched / unexpected item(s) found in scanned returns!`, 'error');
+        return;
+      }
+    }
+
+    const textToCopy = idList.join('\n');
+    navigator.clipboard.writeText(textToCopy);
+    toast(`Copied ${label} (${idList.length} items) to clipboard!`, 'success');
   };
 
   // --- EXPECTED TIDs HANDLERS ---
   const handleAddExpectedScan = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const id = expectedScanInput.trim().toUpperCase();
-      if (!id) return;
+      const rawId = expectedScanInput.trim().toUpperCase();
+      if (!rawId) return;
 
+      const extracted = extractValid5CharTids(rawId);
+      if (extracted.length === 0) {
+        toast(`Invalid TID format! Must be 5 characters long.`, 'error');
+        return;
+      }
+
+      const id = extracted[0];
       if (expectedIds.includes(id)) {
         toast(`Expected ID "${id}" is already in the list!`, 'error');
       } else {
@@ -194,33 +224,37 @@ export function WishmasterReturnVerification() {
   };
 
   const handleAddExpectedBulk = () => {
-    const items = expectedBulkInput
-      .split(/[\n, ]+/)
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
+    const validTids = extractValid5CharTids(expectedBulkInput);
 
-    if (items.length === 0) {
-      toast('Please enter valid tracking IDs to import.', 'error');
+    if (validTids.length === 0) {
+      toast('No valid 5-character tracking IDs found in input.', 'error');
       return;
     }
 
-    const uniqueSet = Array.from(new Set([...expectedIds, ...items]));
+    const uniqueSet = Array.from(new Set([...expectedIds, ...validTids]));
     const addedCount = uniqueSet.length - expectedIds.length;
 
     setExpectedIds(uniqueSet);
     setExpectedBulkInput('');
-    toast(`Added ${addedCount} expected tracking ID(s).`, 'success');
+    toast(`Filtered & added ${addedCount} valid 5-char expected ID(s).`, 'success');
   };
 
   // --- RETURNED TIDs HANDLERS ---
   const handleAddReturnedScan = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const id = returnedScanInput.trim().toUpperCase();
-      if (!id) return;
+      const rawId = returnedScanInput.trim().toUpperCase();
+      if (!rawId) return;
 
+      const extracted = extractValid5CharTids(rawId);
+      if (extracted.length === 0) {
+        toast(`Invalid TID format! Must be 5 characters long.`, 'error');
+        return;
+      }
+
+      const id = extracted[0];
       if (scannedIds.includes(id)) {
-        toast(`ID "${id}" already scanned in returns!`, 'error');
+        toast(`ID "${id}" is already scanned in returns!`, 'error');
       } else {
         setScannedIds((prev) => [id, ...prev]);
         if (expectedIds.includes(id)) {
@@ -234,22 +268,19 @@ export function WishmasterReturnVerification() {
   };
 
   const handleAddReturnedBulk = () => {
-    const items = returnedBulkInput
-      .split(/[\n, ]+/)
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
+    const validTids = extractValid5CharTids(returnedBulkInput);
 
-    if (items.length === 0) {
-      toast('Please enter valid tracking IDs.', 'error');
+    if (validTids.length === 0) {
+      toast('No valid 5-character tracking IDs found.', 'error');
       return;
     }
 
-    const uniqueSet = Array.from(new Set([...scannedIds, ...items]));
+    const uniqueSet = Array.from(new Set([...scannedIds, ...validTids]));
     const addedCount = uniqueSet.length - scannedIds.length;
 
     setScannedIds(uniqueSet);
     setReturnedBulkInput('');
-    toast(`Processed ${addedCount} returned tracking ID(s).`, 'success');
+    toast(`Filtered & processed ${addedCount} valid returned ID(s).`, 'success');
   };
 
   // CSV Export
@@ -294,7 +325,6 @@ export function WishmasterReturnVerification() {
       
       {/* --- DASHBOARD HEADER --- */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 shadow-xl text-white relative overflow-hidden">
-        {/* Subtle decorative glow circle */}
         <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -307,7 +337,7 @@ export function WishmasterReturnVerification() {
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                   Wishmaster Returns Hub
                   <span className="text-[10px] bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full font-medium">
-                    Live Auto-Saved
+                    Strict 5-Char Validated
                   </span>
                 </h1>
                 <p className="text-xs text-slate-400">
@@ -426,7 +456,7 @@ export function WishmasterReturnVerification() {
                 <h2 className="text-sm font-bold text-slate-900">
                   Assigned Wishmaster TIDs
                 </h2>
-                <p className="text-[11px] text-slate-400">Product IDs handed over for delivery</p>
+                <p className="text-[11px] text-slate-400">5-Character Tracking IDs</p>
               </div>
             </div>
             
@@ -465,7 +495,7 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => handleCopyToClipboard(expectedIds.join('\n'), 'Expected TIDs')}
+                  onClick={() => handleCopyScannedWithValidation(expectedIds, 'Expected TIDs', 'expected')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
                   <Copy className="h-3 w-3" /> Copy Loaded ({expectedIds.length})
@@ -473,7 +503,7 @@ export function WishmasterReturnVerification() {
               </div>
               <textarea
                 className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none resize-none bg-slate-50/50"
-                placeholder="Paste TIDs here separated by newlines, spaces, or commas..."
+                placeholder="Paste TIDs here. Extra chars like P2/P3 are filtered automatically to 5 chars..."
                 value={expectedBulkInput}
                 onChange={(e) => setExpectedBulkInput(e.target.value)}
               />
@@ -494,7 +524,7 @@ export function WishmasterReturnVerification() {
               <input
                 ref={expectedScanRef}
                 className="w-full font-mono uppercase text-sm p-3 rounded-xl border-2 border-blue-400 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
-                placeholder="Scan expected package barcode..."
+                placeholder="Scan expected 5-character barcode..."
                 value={expectedScanInput}
                 onChange={(e) => setExpectedScanInput(e.target.value)}
                 onKeyDown={handleAddExpectedScan}
@@ -590,7 +620,7 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => handleCopyToClipboard(scannedIds.join('\n'), 'Returned TIDs')}
+                  onClick={() => handleCopyScannedWithValidation(scannedIds, 'Returned TIDs', 'scanned')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
                   <Copy className="h-3 w-3" /> Copy Scanned ({scannedIds.length})
@@ -617,7 +647,7 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => handleCopyToClipboard(scannedIds.join('\n'), 'Returned TIDs')}
+                  onClick={() => handleCopyScannedWithValidation(scannedIds, 'Returned TIDs', 'scanned')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
                   <Copy className="h-3 w-3" /> Copy Returned List
@@ -625,7 +655,7 @@ export function WishmasterReturnVerification() {
               </div>
               <textarea
                 className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none resize-none bg-slate-50/50"
-                placeholder="Paste returned TIDs here..."
+                placeholder="Paste returned TIDs here. Extra chars like P2/P3 filtered automatically..."
                 value={returnedBulkInput}
                 onChange={(e) => setReturnedBulkInput(e.target.value)}
               />
@@ -747,13 +777,13 @@ export function WishmasterReturnVerification() {
 
           <div className="flex gap-2 text-xs">
             <button
-              onClick={() => handleCopyToClipboard(missing.join('\n'), 'Missing TIDs')}
+              onClick={() => handleCopyScannedWithValidation(missing, 'Missing TIDs', 'missing')}
               className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/60 font-semibold transition-all flex items-center gap-1.5"
             >
               <Copy className="h-3.5 w-3.5" /> Copy Missing ({missing.length})
             </button>
             <button
-              onClick={() => handleCopyToClipboard(extra.join('\n'), 'Extra TIDs')}
+              onClick={() => handleCopyScannedWithValidation(extra, 'Extra TIDs', 'extra')}
               className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200/60 font-semibold transition-all flex items-center gap-1.5"
             >
               <Copy className="h-3.5 w-3.5" /> Copy Extra ({extra.length})

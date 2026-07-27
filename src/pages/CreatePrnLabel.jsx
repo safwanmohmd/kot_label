@@ -20,6 +20,7 @@ import {
   PackageCheck,
   CheckSquare,
   Square,
+  Layout,
 } from 'lucide-react';
 import { CUSTOM_LABEL_SIZE_KEY, useSettings } from '../lib/settings.js';
 import { useToast } from '../lib/useToast.jsx';
@@ -57,21 +58,20 @@ const EMPTY = {
   dimensions: '',
   notes: '',
   label_size: '100x150',
+  label_style: 'standard', // 'standard' | 'dual' | 'bold'
   barcode_type: 'CODE128',
   show_second_barcode: true,
 };
 
-// Generates raw PRN ZPL string with properly scaled & aligned vertical backup barcode
+// Generates raw PRN ZPL string
 function generatePrnContent(form) {
-  const line1 = form.address_line1 ? `^FT20,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
-  const line2 = form.address_line2 ? `^FT20,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
+  const line1 = form.address_line1 ? `^FT30,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
+  const line2 = form.address_line2 ? `^FT30,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
   
   const backupData = form.notes || form.tracking_id || '';
   
-  // ^BY2,3,50 provides clean scaling for vertical backup barcode
-  // ^FT620,30 positions the 90-degree rotated barcode accurately on the right edge
   const secondBarcodeZpl = form.show_second_barcode && backupData
-    ? `^BY2,3,50^FT620,30^BCR,,N,N,N,A\n^FD${backupData}^FS\n`
+    ? `^BY2,2.5,45^FT590,45^BCR,45,N,N,N,A\n^FD${backupData}^FS\n`
     : '';
 
   return `CT~~CD,~CC^~CT~
@@ -98,19 +98,19 @@ function generatePrnContent(form) {
 ^LL467
 ^LS0
 ^FO16,16^GB637,435,3^FS
-^FO16,70^GB520,0,2^FS
-^FT30,52^A0N,28,30^CI28^FDKOT-PRN | ${form.courier_name || 'COURIER'}^FS^CI27
-^FT20,100^A0N,18,18^CI28^FDSHIP TO:^FS^CI27
-^FT20,124^A0N,24,24^CI28^FD${form.receiver_name || ''}^FS^CI27
+^FO16,70^GB500,0,2^FS
+^FT30,52^A0N,28,30^CI28^FDKOT - PRN | ${form.courier_name || 'COURIER'}^FS^CI27
+^FT30,100^A0N,18,18^CI28^FDSHIP TO:^FS^CI27
+^FT30,124^A0N,24,24^CI28^FD${form.receiver_name || ''}^FS^CI27
 ${line1}${line2}
-^FT20,220^A0N,20,20^CI28^FDCITY: ${form.receiver_city || ''}  |  PIN: ${form.receiver_postal_code || ''}^FS^CI27
-^FO16,240^GB520,0,2^FS
-^FT20,275^A0N,22,22^CI28^FDORDER ID: ${form.notes || '-'}^FS^CI27
-${secondBarcodeZpl}^FO16,290^GB520,0,2^FS
+^FT30,220^A0N,20,20^CI28^FDCITY: ${form.receiver_city || ''}  |  PIN: ${form.receiver_postal_code || ''}^FS^CI27
+^FO16,240^GB500,0,2^FS
+^FT30,275^A0N,22,22^CI28^FDORDER ID: ${form.notes || '-'}^FS^CI27
+${secondBarcodeZpl}^FO16,290^GB500,0,2^FS
 ^BY2.2,3,75^FT30,395^BCN,,N,N,N,A
 ^FD${form.tracking_id || ''}^FS
 ^FT30,425^A0N,28,32^CI28^FD${form.tracking_id || ''}^FS^CI27
-^FT460,430^A0N,26,26^CI28^FD(DEL/MUD)^FS^CI27
+^FT430,425^A0N,24,24^CI28^FD(DEL/MUD)^FS^CI27
 ^PQ1,0,1,Y
 ^XZ
 `;
@@ -123,7 +123,7 @@ function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayV
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     JsBarcode(svg, sanitizeForCode39(trackingId), {
       format: barcodeType === 'CODE39' ? 'CODE39' : 'CODE128',
-      width: 1.8,
+      width: 2,
       height: height,
       displayValue: displayValue,
       font: 'monospace',
@@ -132,6 +132,7 @@ function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayV
       background: 'transparent',
       lineColor: '#000000',
     });
+    svg.setAttribute('style', 'shape-rendering: crispEdges;');
     return svg.outerHTML;
   } catch (e) {
     return `<div style="font-family: monospace; font-size: 14px;">${trackingId}</div>`;
@@ -177,6 +178,7 @@ export function CreatePrnLabel() {
           dimensions: label.dimensions ?? '',
           notes: label.notes ?? '',
           label_size: label.label_size ?? '100x150',
+          label_style: label.label_style ?? 'standard',
           barcode_type: label.barcode_type ?? 'CODE128',
           show_second_barcode: label.show_second_barcode ?? true,
         });
@@ -285,6 +287,7 @@ export function CreatePrnLabel() {
         dimensions: form.dimensions.trim() || null,
         notes: form.notes.trim() || null,
         label_size: form.label_size,
+        label_style: form.label_style || 'standard',
         barcode_type: form.barcode_type,
         show_second_barcode: form.show_second_barcode,
       };
@@ -353,6 +356,20 @@ export function CreatePrnLabel() {
                 autoFocus
               />
             </div>
+
+            <div>
+              <label className="label-text">Label Style / Layout</label>
+              <select
+                className="input font-semibold text-brand-600"
+                value={form.label_style || 'standard'}
+                onChange={(e) => update('label_style', e.target.value)}
+              >
+                <option value="standard">Style 1: Standard Logistics (Side Barcode)</option>
+                <option value="dual">Style 2: Dual Stacked (Order + Tracking)</option>
+                <option value="bold">Style 3: High Density Express</option>
+              </select>
+            </div>
+
             <div>
               <label className="label-text">Barcode Type</label>
               <select
@@ -364,6 +381,7 @@ export function CreatePrnLabel() {
                 <option value="CODE39">Code39</option>
               </select>
             </div>
+
             <div>
               <label className="label-text">Label Size</label>
               <select
@@ -379,21 +397,22 @@ export function CreatePrnLabel() {
               </select>
             </div>
 
-            {/* Toggle Switch for Second Barcode */}
-            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => update('show_second_barcode', !form.show_second_barcode)}
-                className="flex items-center gap-2 text-sm font-semibold text-ink-800 hover:text-brand-600 cursor-pointer select-none"
-              >
-                {form.show_second_barcode ? (
-                  <CheckSquare className="h-5 w-5 text-brand-600" />
-                ) : (
-                  <Square className="h-5 w-5 text-ink-400" />
-                )}
-                <span>Include Secondary Vertical Backup Barcode</span>
-              </button>
-            </div>
+            {(form.label_style === 'standard' || !form.label_style) && (
+              <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => update('show_second_barcode', !form.show_second_barcode)}
+                  className="flex items-center gap-2 text-sm font-semibold text-ink-800 hover:text-brand-600 cursor-pointer select-none"
+                >
+                  {form.show_second_barcode ? (
+                    <CheckSquare className="h-5 w-5 text-brand-600" />
+                  ) : (
+                    <Square className="h-5 w-5 text-ink-400" />
+                  )}
+                  <span>Include Secondary Vertical Backup Barcode</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -609,8 +628,16 @@ export function CreatePrnLabel() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-center">
-              <MiniStat icon={Package} label="Format" value="ZPL Native (PRN)" />
-              <MiniStat icon={Hash} label="Type" value={form.barcode_type} />
+              <MiniStat 
+                icon={Layout} 
+                label="Style Layout" 
+                value={(form.label_style || 'standard').toUpperCase()} 
+              />
+              <MiniStat 
+                icon={Hash} 
+                label="Type" 
+                value={form.barcode_type || 'CODE128'} 
+              />
             </div>
           </div>
         </div>
@@ -619,12 +646,15 @@ export function CreatePrnLabel() {
   );
 }
 
-/* Dynamic PRN Preview Component */
+/* Dynamic PRN Preview Component supporting multiple layout styles */
 export function PrnLabelPreview({ form }) {
   const primaryBarcodeSvgRef = useRef(null);
   const secondaryBarcodeSvgRef = useRef(null);
+  const orderBarcodeSvgRef = useRef(null);
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);
+
+  const style = form?.label_style || 'standard';
 
   useEffect(() => {
     if (!wrapperRef.current) return;
@@ -650,27 +680,28 @@ export function PrnLabelPreview({ form }) {
 
   // Primary Barcode
   useEffect(() => {
-    if (primaryBarcodeSvgRef.current && form.tracking_id) {
+    if (primaryBarcodeSvgRef.current && form?.tracking_id) {
       try {
         JsBarcode(primaryBarcodeSvgRef.current, sanitizeForCode39(form.tracking_id), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
-          width: 2.2,
-          height: 70,
+          width: style === 'bold' ? 2.5 : 2.2,
+          height: style === 'bold' ? 80 : 65,
           displayValue: false,
           margin: 0,
           background: 'transparent',
           lineColor: '#000000',
         });
+        primaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
       } catch (e) {
         console.error('Primary Barcode Error:', e);
       }
     }
-  }, [form.tracking_id, form.barcode_type]);
+  }, [form?.tracking_id, form?.barcode_type, style]);
 
-  // Secondary Backup Barcode (Properly sized & rendered without overflowing layout)
+  // Secondary Backup Barcode (Style 1)
   useEffect(() => {
-    const backupValue = form.notes || form.tracking_id;
-    if (secondaryBarcodeSvgRef.current && form.show_second_barcode && backupValue) {
+    const backupValue = form?.notes || form?.tracking_id;
+    if (secondaryBarcodeSvgRef.current && form?.show_second_barcode && backupValue && style === 'standard') {
       try {
         JsBarcode(secondaryBarcodeSvgRef.current, sanitizeForCode39(backupValue), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
@@ -681,11 +712,32 @@ export function PrnLabelPreview({ form }) {
           background: 'transparent',
           lineColor: '#000000',
         });
+        secondaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
       } catch (e) {
         console.error('Secondary Barcode Error:', e);
       }
     }
-  }, [form.notes, form.tracking_id, form.barcode_type, form.show_second_barcode]);
+  }, [form?.notes, form?.tracking_id, form?.barcode_type, form?.show_second_barcode, style]);
+
+  // Order Barcode (Style 2)
+  useEffect(() => {
+    if (orderBarcodeSvgRef.current && form?.notes && style === 'dual') {
+      try {
+        JsBarcode(orderBarcodeSvgRef.current, sanitizeForCode39(form.notes), {
+          format: 'CODE128',
+          width: 1.5,
+          height: 35,
+          displayValue: false,
+          margin: 0,
+          background: 'transparent',
+          lineColor: '#000000',
+        });
+        orderBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
+      } catch (e) {
+        console.error('Order Barcode Error:', e);
+      }
+    }
+  }, [form?.notes, style]);
 
   const nativeWidth = 669;
   const nativeHeight = 467;
@@ -706,134 +758,141 @@ export function PrnLabelPreview({ form }) {
           fontFamily: 'Inter, sans-serif, monospace',
           boxSizing: 'border-box',
           overflow: 'hidden',
-          border: '2px solid #000000',
-          boxShadow: '0 8px 16px -2px rgba(0, 0, 0, 0.1)',
           padding: '16px',
         }}
       >
-        {/* Correctly Aligned Rotated Secondary Backup Barcode */}
-        {form.show_second_barcode && (
-          <div
-            style={{
-              position: 'absolute',
-              right: '24px',
-              top: '24px',
-              width: '60px',
-              height: '380px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-            }}
-          >
-            <div
-              style={{
-                transform: 'rotate(90deg)',
-                transformOrigin: 'center center',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                backgroundColor: '#ffffff',
-                padding: '2px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <svg ref={secondaryBarcodeSvgRef}></svg>
-              <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', marginTop: '2px' }}>
-                {form.notes || form.tracking_id || 'BACKUP'}
-              </span>
+        {/* Dynamic Style Rendering */}
+        {style === 'dual' && (
+          /* STYLE 2: DUAL STACKED */
+          <div style={{ width: '100%', height: '100%', border: '2px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>EXPRESS COURIER</div>
+                <div style={{ fontSize: '20px', fontWeight: '900' }}>{form?.courier_name || 'COURIER'}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>HUB ROUTE</div>
+                <div style={{ fontSize: '22px', fontWeight: '900' }}>(DEL/MUD)</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '13px' }}>
+              <div style={{ fontWeight: 'bold', color: '#64748b' }}>DELIVER TO:</div>
+              <div style={{ fontSize: '18px', fontWeight: '900' }}>{form?.receiver_name || ''}</div>
+              <div>{form?.address_line1 || ''} {form?.address_line2 || ''}</div>
+              <div style={{ fontWeight: 'bold' }}>CITY: {form?.receiver_city || ''} ({form?.receiver_postal_code || ''})</div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}>ORDER REF BARCODE</div>
+                <svg ref={orderBarcodeSvgRef}></svg>
+                <div style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{form?.notes || '-'}</div>
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 'bold', background: '#e2e8f0', padding: '6px 12px', borderRadius: '4px' }}>
+                PREPAID
+              </div>
+            </div>
+
+            <div style={{ borderTop: '2px solid #000', paddingTop: '6px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}>PRIMARY WAYBILL</div>
+              <svg ref={primaryBarcodeSvgRef}></svg>
+              <div style={{ fontSize: '20px', fontWeight: '900', fontFamily: 'monospace', letterSpacing: '0.08em' }}>{form?.tracking_id || '-'}</div>
             </div>
           </div>
         )}
 
-        {/* Header Section */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '2px solid #000000',
-            paddingBottom: '8px',
-            marginBottom: '10px',
-            paddingRight: form.show_second_barcode ? '80px' : '0px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ backgroundColor: '#000000', color: '#ffffff', padding: '5px', borderRadius: '6px' }}>
-              <PackageCheck className="h-5 w-5 stroke-[2.5]" />
+        {style === 'bold' && (
+          /* STYLE 3: BOLD TRACKING */
+          <div style={{ width: '100%', height: '100%', border: '4px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ background: '#000', color: '#fff', padding: '8px 12px', margin: '-12px -12px 8px -12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: '900', fontSize: '20px' }}>{(form?.courier_name || 'COURIER').toUpperCase()}</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '16px', background: '#fff', color: '#000', padding: '2px 8px', borderRadius: '4px' }}>(DEL/MUD)</span>
             </div>
-            <span style={{ fontSize: '22px', fontWeight: '900', letterSpacing: '0.05em' }}>KOT-PRN</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f1f5f9', padding: '4px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-            <Truck className="h-5 w-5 stroke-[2]" />
-            <span style={{ fontSize: '16px', fontWeight: '700' }}>{form.courier_name || 'COURIER'}</span>
-          </div>
-        </div>
 
-        {/* Address & Delivery Section */}
-        <div style={{ minHeight: '125px', paddingRight: form.show_second_barcode ? '80px' : '0px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px', letterSpacing: '0.05em' }}>
-            <MapPin className="h-3.5 w-3.5" />
-            <span>DELIVER TO</span>
-          </div>
-          <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '4px' }}>
-            {form.receiver_name || ''}
-          </div>
-          <div style={{ fontSize: '14px', lineHeight: '20px', color: '#1e293b' }}>
-            {form.address_line1 && <div>{form.address_line1}</div>}
-            {form.address_line2 && <div>{form.address_line2}</div>}
-          </div>
-          <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '6px' }}>
-            City: {form.receiver_city || ''} &nbsp;|&nbsp; PIN: {form.receiver_postal_code || ''}
-          </div>
-        </div>
-
-        {/* Order ID Section */}
-        <div
-          style={{
-            borderTop: '2px solid #000000',
-            borderBottom: '2px solid #000000',
-            padding: '6px 0',
-            margin: '8px 0',
-            marginRight: form.show_second_barcode ? '80px' : '0px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <FileText className="h-4 w-4" />
-          <span style={{ fontSize: '15px', fontWeight: '700' }}>
-            Order ID: {form.notes || '-'}
-          </span>
-        </div>
-
-        {/* Tracking & Primary Barcode Section */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            marginTop: '8px',
-            paddingRight: form.show_second_barcode ? '80px' : '0px',
-          }}
-        >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '2px' }}>
-              <Barcode className="h-3.5 w-3.5" />
-              <span>BARCODE TRACKING</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#64748b' }}>SHIP TO:</div>
+                <div style={{ fontWeight: '900', fontSize: '16px' }}>{form?.receiver_name || ''}</div>
+                <div style={{ fontSize: '12px' }}>{form?.address_line1 || ''}</div>
+                <div style={{ fontSize: '12px' }}>{form?.receiver_city || ''} - {form?.receiver_postal_code || ''}</div>
+              </div>
+              <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '8px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '10px', color: '#64748b' }}>ORDER DETAILS:</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{form?.notes || '-'}</div>
+                <div style={{ fontSize: '11px', color: '#475569', marginTop: '6px' }}>WEIGHT: {form?.weight || '0.50'} KG</div>
+              </div>
             </div>
-            
-            <svg ref={primaryBarcodeSvgRef}></svg>
-            
-            <div style={{ fontSize: '20px', fontWeight: '900', fontFamily: 'monospace', letterSpacing: '0.08em', color: '#000000', marginTop: '4px' }}>
-              {form.tracking_id || '-'}
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+              <svg ref={primaryBarcodeSvgRef}></svg>
+              <div style={{ fontSize: '24px', fontWeight: '900', fontFamily: 'monospace', letterSpacing: '0.1em', marginTop: '6px' }}>{form?.tracking_id || '-'}</div>
             </div>
           </div>
+        )}
 
-          <div style={{ fontSize: '22px', fontWeight: '900', letterSpacing: '0.05em' }}>
-            (DEL/MUD)
+        {style === 'standard' && (
+          /* STYLE 1: STANDARD LOGISTICS */
+          <div style={{ width: '100%', height: '100%', border: '2px solid #000000', boxSizing: 'border-box', position: 'relative', padding: '14px' }}>
+            {form?.show_second_barcode && (
+              <div style={{ position: 'absolute', right: '10px', top: '10px', bottom: '10px', width: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+                <div style={{ transform: 'rotate(90deg)', transformOrigin: 'center center', display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#ffffff', padding: '2px', whiteSpace: 'nowrap' }}>
+                  <svg ref={secondaryBarcodeSvgRef}></svg>
+                  <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', marginTop: '2px' }}>
+                    {form?.notes || form?.tracking_id || 'BACKUP'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '10px', paddingRight: form?.show_second_barcode ? '80px' : '0px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: '#000000', color: '#ffffff', padding: '5px', borderRadius: '6px' }}>
+                  <PackageCheck className="h-5 w-5 stroke-[2.5]" />
+                </div>
+                <span style={{ fontSize: '22px', fontWeight: '900', letterSpacing: '0.05em' }}>KOT - PRN</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f1f5f9', padding: '4px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                <Truck className="h-5 w-5 stroke-[2]" />
+                <span style={{ fontSize: '16px', fontWeight: '700' }}>{form?.courier_name || 'COURIER'}</span>
+              </div>
+            </div>
+
+            <div style={{ minHeight: '120px', paddingRight: form?.show_second_barcode ? '80px' : '0px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px', letterSpacing: '0.05em' }}>
+                <MapPin className="h-3.5 w-3.5" />
+                <span>SHIP TO:</span>
+              </div>
+              <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '4px' }}>{form?.receiver_name || ''}</div>
+              <div style={{ fontSize: '14px', lineHeight: '20px', color: '#1e293b' }}>
+                {form?.address_line1 && <div>{form.address_line1}</div>}
+                {form?.address_line2 && <div>{form.address_line2}</div>}
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '700', marginTop: '6px' }}>
+                CITY: {form?.receiver_city || ''} &nbsp;|&nbsp; PIN: {form?.receiver_postal_code || ''}
+              </div>
+            </div>
+
+            <div style={{ borderTop: '2px solid #000000', borderBottom: '2px solid #000000', padding: '6px 0', margin: '8px 0', marginRight: form?.show_second_barcode ? '80px' : '0px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileText className="h-4 w-4" />
+              <span style={{ fontSize: '15px', fontWeight: '700' }}>ORDER ID: {form?.notes || '-'}</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '80px' : '0px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '2px' }}>
+                  <Barcode className="h-3.5 w-3.5" />
+                  <span>BARCODE TRACKING</span>
+                </div>
+                <svg ref={primaryBarcodeSvgRef}></svg>
+                <div style={{ fontSize: '20px', fontWeight: '900', fontFamily: 'monospace', letterSpacing: '0.08em', color: '#000000', marginTop: '4px' }}>
+                  {form?.tracking_id || '-'}
+                </div>
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: '900', letterSpacing: '0.05em' }}>(DEL/MUD)</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -860,12 +919,82 @@ function settingsDefaults(settings) {
 }
 
 function renderPrnLabelHtml(form) {
-  const addressLines = [form.address_line1, form.address_line2].filter(Boolean);
-  const primaryBarcodeSvg = generateBarcodeSvgString(form.tracking_id, form.barcode_type, 70, false);
-  const backupValue = form.notes || form.tracking_id;
-  const secondaryBarcodeSvg = form.show_second_barcode && backupValue 
-    ? generateBarcodeSvgString(backupValue, form.barcode_type, 48, false)
+  const style = form?.label_style || 'standard';
+  const addressLines = [form?.address_line1, form?.address_line2].filter(Boolean);
+  const primaryBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, form?.barcode_type, style === 'bold' ? 80 : 65, false);
+  const backupValue = form?.notes || form?.tracking_id;
+  const secondaryBarcodeSvg = form?.show_second_barcode && backupValue 
+    ? generateBarcodeSvgString(backupValue, form?.barcode_type, 48, false)
     : '';
+  const orderBarcodeSvg = form?.notes ? generateBarcodeSvgString(form.notes, 'CODE128', 35, false) : '';
+
+  if (style === 'dual') {
+    return `
+      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box;">
+        <div style="width:100%; height:100%; border:2px solid #000; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between;">
+          <div style="display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:8px;">
+            <div>
+              <div style="font-size:12px; font-weight:bold; color:#64748b;">EXPRESS COURIER</div>
+              <div style="font-size:20px; font-weight:900;">${form?.courier_name || 'COURIER'}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:12px; font-weight:bold; color:#64748b;">HUB ROUTE</div>
+              <div style="font-size:22px; font-weight:900;">(DEL/MUD)</div>
+            </div>
+          </div>
+          <div style="font-size:13px;">
+            <div style="font-weight:bold; color:#64748b;">DELIVER TO:</div>
+            <div style="font-size:18px; font-weight:900;">${form?.receiver_name || ''}</div>
+            <div>${form?.address_line1 || ''} ${form?.address_line2 || ''}</div>
+            <div style="font-weight:bold;">CITY: ${form?.receiver_city || ''} (${form?.receiver_postal_code || ''})</div>
+          </div>
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-size:10px; font-weight:bold; color:#64748b;">ORDER REF BARCODE</div>
+              ${orderBarcodeSvg}
+              <div style="font-size:12px; font-family:monospace; font-weight:bold;">${form?.notes || '-'}</div>
+            </div>
+            <div style="font-size:12px; font-weight:bold; background:#e2e8f0; padding:6px 12px; border-radius:4px;">PREPAID</div>
+          </div>
+          <div style="border-top:2px solid #000; padding-top:6px;">
+            <div style="font-size:10px; font-weight:bold; color:#64748b;">PRIMARY WAYBILL</div>
+            ${primaryBarcodeSvg}
+            <div style="font-size:20px; font-weight:900; font-family:monospace; letter-spacing:0.08em;">${form?.tracking_id || '-'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (style === 'bold') {
+    return `
+      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box;">
+        <div style="width:100%; height:100%; border:4px solid #000; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between;">
+          <div style="background:#000; color:#fff; padding:8px 12px; margin:-12px -12px 8px -12px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:900; font-size:20px;">${(form?.courier_name || 'COURIER').toUpperCase()}</span>
+            <span style="font-family:monospace; font-weight:bold; font-size:16px; background:#fff; color:#000; padding:2px 8px; border-radius:4px;">(DEL/MUD)</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; border-bottom:2px solid #000; padding-bottom:8px;">
+            <div>
+              <div style="font-weight:bold; font-size:10px; color:#64748b;">SHIP TO:</div>
+              <div style="font-weight:900; font-size:16px;">${form?.receiver_name || ''}</div>
+              <div style="font-size:12px;">${form?.address_line1 || ''}</div>
+              <div style="font-size:12px;">${form?.receiver_city || ''} - ${form?.receiver_postal_code || ''}</div>
+            </div>
+            <div style="border-left:1px solid #cbd5e1; padding-left:8px;">
+              <div style="font-weight:bold; font-size:10px; color:#64748b;">ORDER DETAILS:</div>
+              <div style="font-family:monospace; font-weight:bold; font-size:14px;">${form?.notes || '-'}</div>
+              <div style="font-size:11px; color:#475569; margin-top:6px;">WEIGHT: ${form?.weight || '0.50'} KG</div>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
+            ${primaryBarcodeSvg}
+            <div style="font-size:24px; font-weight:900; font-family:monospace; letter-spacing:0.1em; margin-top:6px;">${form?.tracking_id || '-'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   return `
     <div style="
@@ -878,101 +1007,111 @@ function renderPrnLabelHtml(form) {
       box-sizing: border-box;
       overflow: hidden;
       padding: 16px;
-      border: 2px solid #000000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     ">
-      ${secondaryBarcodeSvg ? `
+      <div style="
+        width: 100%;
+        height: 100%;
+        border: 2px solid #000000;
+        box-sizing: border-box;
+        position: relative;
+        padding: 14px;
+      ">
+        ${secondaryBarcodeSvg ? `
+          <div style="
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            bottom: 10px;
+            width: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+          ">
+            <div style="
+              transform: rotate(90deg);
+              transform-origin: center center;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              background-color: #ffffff;
+              padding: 2px;
+              white-space: nowrap;
+            ">
+              ${secondaryBarcodeSvg}
+              <span style="font-size: 11px; font-family: monospace; font-weight: bold; margin-top: 2px;">${backupValue}</span>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Header Section -->
         <div style="
-          position: absolute;
-          right: 24px;
-          top: 24px;
-          width: 60px;
-          height: 380px;
           display: flex;
           align-items: center;
-          justify-content: center;
-          z-index: 10;
+          justify-content: space-between;
+          border-bottom: 2px solid #000000;
+          padding-bottom: 8px;
+          margin-bottom: 10px;
+          padding-right: ${form?.show_second_barcode ? '80px' : '0px'};
         ">
-          <div style="
-            transform: rotate(90deg);
-            transform-origin: center center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #ffffff;
-            padding: 2px;
-            white-space: nowrap;
-          ">
-            ${secondaryBarcodeSvg}
-            <span style="font-size: 11px; font-family: monospace; font-weight: bold; margin-top: 2px;">${backupValue}</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="background-color: #000000; color: #ffffff; padding: 5px; border-radius: 6px; display: inline-flex;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
+            </div>
+            <span style="font-size: 22px; font-weight: 900; letter-spacing: 0.05em;">KOT - PRN</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; background-color: #f1f5f9; padding: 4px 12px; border-radius: 4px; border: 1px solid #cbd5e1;">
+            <span style="font-size: 16px; font-weight: 700;">${form?.courier_name || 'COURIER'}</span>
           </div>
         </div>
-      ` : ''}
 
-      <!-- Header Section -->
-      <div style="
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-bottom: 2px solid #000000;
-        padding-bottom: 8px;
-        margin-bottom: 10px;
-        padding-right: ${form.show_second_barcode ? '80px' : '0px'};
-      ">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div style="background-color: #000000; color: #ffffff; padding: 5px; border-radius: 6px; display: inline-flex;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
+        <!-- Address Section -->
+        <div style="min-height: 120px; padding-right: ${form?.show_second_barcode ? '80px' : '0px'};">
+          <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 4px; letter-spacing: 0.05em;">SHIP TO:</div>
+          <div style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">
+            ${form?.receiver_name || ''}
           </div>
-          <span style="font-size: 22px; font-weight: 900; letter-spacing: 0.05em;">KOT-PRN</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 6px; background-color: #f1f5f9; padding: 4px 12px; border-radius: 4px; border: 1px solid #cbd5e1;">
-          <span style="font-size: 16px; font-weight: 700;">${form.courier_name || 'COURIER'}</span>
-        </div>
-      </div>
-
-      <!-- Address Section -->
-      <div style="min-height: 125px; padding-right: ${form.show_second_barcode ? '80px' : '0px'};">
-        <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 4px; letter-spacing: 0.05em;">DELIVER TO</div>
-        <div style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">
-          ${form.receiver_name || ''}
-        </div>
-        <div style="font-size: 14px; line-height: 20px; color: #1e293b;">
-          ${addressLines.map((l) => `<div>${l}</div>`).join('')}
-        </div>
-        <div style="font-size: 14px; font-weight: 700; margin-top: 6px;">
-          City: ${form.receiver_city || ''} &nbsp;|&nbsp; PIN: ${form.receiver_postal_code || ''}
-        </div>
-      </div>
-
-      <!-- Order ID Bar -->
-      <div style="
-        border-top: 2px solid #000000;
-        border-bottom: 2px solid #000000;
-        padding: 6px 0;
-        margin: 8px 0;
-        margin-right: ${form.show_second_barcode ? '80px' : '0px'};
-        font-size: 15px;
-        font-weight: 700;
-      ">
-        Order ID: ${form.notes || '-'}
-      </div>
-
-      <!-- Primary Tracking & Barcode -->
-      <div style="
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        margin-top: 8px;
-        padding-right: ${form.show_second_barcode ? '80px' : '0px'};
-      ">
-        <div>
-          <div style="font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 2px;">BARCODE TRACKING</div>
-          ${primaryBarcodeSvg}
-          <div style="font-size: 20px; font-weight: 900; font-family: monospace; letter-spacing: 0.08em; color: #000000; margin-top: 4px;">
-            ${form.tracking_id || '-'}
+          <div style="font-size: 14px; line-height: 20px; color: #1e293b;">
+            ${addressLines.map((l) => `<div>${l}</div>`).join('')}
+          </div>
+          <div style="font-size: 14px; font-weight: 700; margin-top: 6px;">
+            CITY: ${form?.receiver_city || ''} &nbsp;|&nbsp; PIN: ${form?.receiver_postal_code || ''}
           </div>
         </div>
-        <div style="font-size: 22px; font-weight: 900; letter-spacing: 0.05em;">
-          (DEL/MUD)
+
+        <!-- Order ID Bar -->
+        <div style="
+          border-top: 2px solid #000000;
+          border-bottom: 2px solid #000000;
+          padding: 6px 0;
+          margin: 8px 0;
+          margin-right: ${form?.show_second_barcode ? '80px' : '0px'};
+          font-size: 15px;
+          font-weight: 700;
+        ">
+          ORDER ID: ${form?.notes || '-'}
+        </div>
+
+        <!-- Primary Tracking & Barcode -->
+        <div style="
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          margin-top: 8px;
+          padding-right: ${form?.show_second_barcode ? '80px' : '0px'};
+        ">
+          <div>
+            <div style="font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 2px;">BARCODE TRACKING</div>
+            ${primaryBarcodeSvg}
+            <div style="font-size: 20px; font-weight: 900; font-family: monospace; letter-spacing: 0.08em; color: #000000; margin-top: 4px;">
+              ${form?.tracking_id || '-'}
+            </div>
+          </div>
+          <div style="font-size: 20px; font-weight: 900; letter-spacing: 0.05em;">
+            (DEL/MUD)
+          </div>
         </div>
       </div>
     </div>
