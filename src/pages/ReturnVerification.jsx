@@ -15,6 +15,7 @@ import {
   Trash2,
   Save,
   ShieldCheck,
+  Filter,
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 
@@ -24,15 +25,33 @@ const HISTORY_KEY = 'wm_returns_saved_history_v1';
 export function WishmasterReturnVerification() {
   const toast = useToast();
 
-  // Helper to extract strictly 5-character alphanumeric Tracking IDs
-  const extractValid5CharTids = (input) => {
+  // Filter Checkbox State
+  const [filterEnabled, setFilterEnabled] = useState(true);
+
+  // Helper to extract tracking IDs based on checkbox filter status
+  const extractTrackingIds = (input) => {
     if (!input) return [];
-    // Matches all exact 5-character alphanumeric chunks
-    const matches = input.toUpperCase().match(/[A-Z0-9]{5}/g);
-    return matches ? matches : [];
+
+    // Split input line by line or whitespace
+    const tokens = input
+      .toUpperCase()
+      .split(/[\n\r\s,]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (!filterEnabled) {
+      return tokens;
+    }
+
+    // FILTER LOGIC:
+    // Matches valid tracking IDs (4 uppercase letters followed by 8-10 digits, e.g. FMPC6319849168)
+    // Ignores short status tags like P1, P2, P3, P4
+    const validTidRegex = /^[A-Z]{4}\d{8,10}$/;
+
+    return tokens.filter((token) => validTidRegex.test(token));
   };
 
-  // --- STATE WITH LOCALSTORAGE INITIALIZATION (SURVIVES PAGE REFRESH) ---
+  // --- STATE WITH LOCALSTORAGE INITIALIZATION ---
   const [expectedIds, setExpectedIds] = useState(() => {
     try {
       const saved = localStorage.getItem(CURRENT_SESSION_KEY);
@@ -51,18 +70,15 @@ export function WishmasterReturnVerification() {
     }
   });
 
-  // Active input modes: 'scan' or 'bulk'
   const [expectedMode, setExpectedMode] = useState('bulk');
   const [returnedMode, setReturnedMode] = useState('scan');
 
-  // Raw input strings
   const [expectedScanInput, setExpectedScanInput] = useState('');
   const [expectedBulkInput, setExpectedBulkInput] = useState('');
 
   const [returnedScanInput, setReturnedScanInput] = useState('');
   const [returnedBulkInput, setReturnedBulkInput] = useState('');
 
-  // History state (Completed saved sessions)
   const [history, setHistory] = useState(() => {
     try {
       const saved = localStorage.getItem(HISTORY_KEY);
@@ -72,11 +88,9 @@ export function WishmasterReturnVerification() {
     }
   });
 
-  // DOM Refs for auto-focus
   const expectedScanRef = useRef(null);
   const returnedScanRef = useRef(null);
 
-  // --- AUTO-SAVE CURRENT ACTIVE SESSION TO LOCALSTORAGE ON EVERY CHANGE ---
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -88,7 +102,6 @@ export function WishmasterReturnVerification() {
     }
   }, [expectedIds, scannedIds]);
 
-  // Auto-focus scanner inputs when switching to scan mode
   useEffect(() => {
     if (expectedMode === 'scan' && expectedScanRef.current) {
       expectedScanRef.current.focus();
@@ -101,12 +114,10 @@ export function WishmasterReturnVerification() {
     }
   }, [returnedMode]);
 
-  // Calculations
   const matched = expectedIds.filter((id) => scannedIds.includes(id));
   const missing = expectedIds.filter((id) => !scannedIds.includes(id));
   const extra = scannedIds.filter((id) => !expectedIds.includes(id));
 
-  // Explicit Save Session to History Panel
   const saveCurrentSessionToHistory = () => {
     if (expectedIds.length === 0 && scannedIds.length === 0) {
       toast('No data in current session to save!', 'error');
@@ -141,21 +152,18 @@ export function WishmasterReturnVerification() {
     }
   };
 
-  // Restore saved session from history
   const handleRestoreSession = (session) => {
     setExpectedIds(session.expectedIds || []);
     setScannedIds(session.scannedIds || []);
     toast(`Restored session from ${session.timestamp}`, 'info');
   };
 
-  // Clear all saved history
   const handleClearHistory = () => {
     setHistory([]);
     localStorage.removeItem(HISTORY_KEY);
     toast('Saved runs history cleared', 'info');
   };
 
-  // Reset Current Session State
   const handleReset = () => {
     if (expectedIds.length > 0 || scannedIds.length > 0) {
       if (confirm('Save current session snapshot before clearing?')) {
@@ -172,14 +180,12 @@ export function WishmasterReturnVerification() {
     toast('Started a new fresh verification session', 'info');
   };
 
-  // --- ENHANCED COPY HANDLER WITH MISMATCH & DUPLICATE CHECKS ---
   const handleCopyScannedWithValidation = (idList, label, type) => {
     if (!idList || idList.length === 0) {
       toast(`No ${label} data to copy!`, 'error');
       return;
     }
 
-    // 1. Check for Duplicate Scanned Tracking IDs
     if (type === 'scanned') {
       const uniqueScanned = new Set(scannedIds);
       if (uniqueScanned.size !== scannedIds.length) {
@@ -187,7 +193,6 @@ export function WishmasterReturnVerification() {
         return;
       }
 
-      // 2. Check for Mismatches (Extra / Unassigned Items)
       if (extra.length > 0) {
         toast(`Cannot copy: ${extra.length} mismatched / unexpected item(s) found in scanned returns!`, 'error');
         return;
@@ -206,9 +211,9 @@ export function WishmasterReturnVerification() {
       const rawId = expectedScanInput.trim().toUpperCase();
       if (!rawId) return;
 
-      const extracted = extractValid5CharTids(rawId);
+      const extracted = extractTrackingIds(rawId);
       if (extracted.length === 0) {
-        toast(`Invalid TID format! Must be 5 characters long.`, 'error');
+        toast(`Invalid Tracking ID!`, 'error');
         return;
       }
 
@@ -224,10 +229,10 @@ export function WishmasterReturnVerification() {
   };
 
   const handleAddExpectedBulk = () => {
-    const validTids = extractValid5CharTids(expectedBulkInput);
+    const validTids = extractTrackingIds(expectedBulkInput);
 
     if (validTids.length === 0) {
-      toast('No valid 5-character tracking IDs found in input.', 'error');
+      toast('No valid tracking IDs found in input.', 'error');
       return;
     }
 
@@ -236,7 +241,7 @@ export function WishmasterReturnVerification() {
 
     setExpectedIds(uniqueSet);
     setExpectedBulkInput('');
-    toast(`Filtered & added ${addedCount} valid 5-char expected ID(s).`, 'success');
+    toast(`Added ${addedCount} expected ID(s).`, 'success');
   };
 
   // --- RETURNED TIDs HANDLERS ---
@@ -246,9 +251,9 @@ export function WishmasterReturnVerification() {
       const rawId = returnedScanInput.trim().toUpperCase();
       if (!rawId) return;
 
-      const extracted = extractValid5CharTids(rawId);
+      const extracted = extractTrackingIds(rawId);
       if (extracted.length === 0) {
-        toast(`Invalid TID format! Must be 5 characters long.`, 'error');
+        toast(`Invalid Tracking ID!`, 'error');
         return;
       }
 
@@ -268,10 +273,10 @@ export function WishmasterReturnVerification() {
   };
 
   const handleAddReturnedBulk = () => {
-    const validTids = extractValid5CharTids(returnedBulkInput);
+    const validTids = extractTrackingIds(returnedBulkInput);
 
     if (validTids.length === 0) {
-      toast('No valid 5-character tracking IDs found.', 'error');
+      toast('No valid tracking IDs found.', 'error');
       return;
     }
 
@@ -280,10 +285,9 @@ export function WishmasterReturnVerification() {
 
     setScannedIds(uniqueSet);
     setReturnedBulkInput('');
-    toast(`Filtered & processed ${addedCount} valid returned ID(s).`, 'success');
+    toast(`Processed ${addedCount} returned ID(s).`, 'success');
   };
 
-  // CSV Export
   const handleExportCsv = () => {
     const rows = [
       ['Tracking ID', 'In Expected List', 'In Returned List', 'Verification Status'],
@@ -315,7 +319,6 @@ export function WishmasterReturnVerification() {
     document.body.removeChild(link);
   };
 
-  // Calculate Match Rate Percentage
   const matchPercentage = expectedIds.length > 0 
     ? Math.round((matched.length / expectedIds.length) * 100) 
     : 0;
@@ -323,10 +326,8 @@ export function WishmasterReturnVerification() {
   return (
     <div className="min-h-screen bg-slate-900/5 text-slate-800 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto transition-all duration-300">
       
-      {/* --- DASHBOARD HEADER --- */}
+      {/* HEADER */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 shadow-xl text-white relative overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
@@ -336,9 +337,6 @@ export function WishmasterReturnVerification() {
               <div>
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                   Wishmaster Returns Hub
-                  <span className="text-[10px] bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full font-medium">
-                    Strict 5-Char Validated
-                  </span>
                 </h1>
                 <p className="text-xs text-slate-400">
                   Reconcile assigned tracking IDs with physically scanned returns in real time.
@@ -347,25 +345,24 @@ export function WishmasterReturnVerification() {
             </div>
           </div>
 
-          {/* Header Action Buttons */}
           <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap sm:flex-nowrap">
             <button
               onClick={saveCurrentSessionToHistory}
               disabled={expectedIds.length === 0 && scannedIds.length === 0}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-lg transition-all flex items-center justify-center gap-1.5"
             >
               <Save className="h-4 w-4" /> Save Snapshot
             </button>
             <button
               onClick={handleExportCsv}
               disabled={expectedIds.length === 0 && scannedIds.length === 0}
-              className="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/50 disabled:opacity-50 text-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+              className="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/50 disabled:opacity-50 text-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
             >
               <Download className="h-4 w-4" /> Export CSV
             </button>
             <button
               onClick={handleReset}
-              className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+              className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
             >
               <RotateCcw className="h-4 w-4" /> New Session
             </button>
@@ -373,17 +370,32 @@ export function WishmasterReturnVerification() {
         </div>
       </div>
 
-      {/* --- DASHBOARD STATS CARDS --- */}
+      {/* FILTER CONTROL BAR */}
+      <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Filter className="h-5 w-5 text-indigo-600" />
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Tracking ID Filter Options</h3>
+            <p className="text-xs text-slate-500">Filter out non-tracking tokens like P1, P2, P3 automatically</p>
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer gap-2">
+          <input
+            type="checkbox"
+            checked={filterEnabled}
+            onChange={(e) => setFilterEnabled(e.target.checked)}
+            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+          />
+          <span className="text-xs font-semibold text-slate-700">Filter Non-TID Noise (e.g. P1, P2)</span>
+        </label>
+      </div>
+
+      {/* STATS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Expected */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-all">
+        <div className="bg-white/80 rounded-2xl p-5 border border-slate-200/80 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Assigned TIDs
-            </span>
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-              <ListPlus className="h-4 w-4" />
-            </div>
+            <span className="text-xs font-bold text-slate-500 uppercase">Assigned TIDs</span>
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><ListPlus className="h-4 w-4" /></div>
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-3xl font-black text-slate-900">{expectedIds.length}</span>
@@ -391,33 +403,21 @@ export function WishmasterReturnVerification() {
           </div>
         </div>
 
-        {/* Matched */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-emerald-100 shadow-sm hover:shadow-md transition-all">
+        <div className="bg-white/80 rounded-2xl p-5 border border-emerald-100 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-              Matched Returns
-            </span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-              <CheckCircle2 className="h-4 w-4" />
-            </div>
+            <span className="text-xs font-bold text-emerald-600 uppercase">Matched Returns</span>
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckCircle2 className="h-4 w-4" /></div>
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-3xl font-black text-emerald-600">{matched.length}</span>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-              {matchPercentage}% Verified
-            </span>
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{matchPercentage}% Verified</span>
           </div>
         </div>
 
-        {/* Missing */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-amber-100 shadow-sm hover:shadow-md transition-all">
+        <div className="bg-white/80 rounded-2xl p-5 border border-amber-100 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">
-              Pending / Missing
-            </span>
-            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
-              <AlertTriangle className="h-4 w-4" />
-            </div>
+            <span className="text-xs font-bold text-amber-600 uppercase">Pending / Missing</span>
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><AlertTriangle className="h-4 w-4" /></div>
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-3xl font-black text-amber-600">{missing.length}</span>
@@ -425,15 +425,10 @@ export function WishmasterReturnVerification() {
           </div>
         </div>
 
-        {/* Unexpected Extra */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-rose-100 shadow-sm hover:shadow-md transition-all">
+        <div className="bg-white/80 rounded-2xl p-5 border border-rose-100 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">
-              Extra / Unassigned
-            </span>
-            <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
-              <XCircle className="h-4 w-4" />
-            </div>
+            <span className="text-xs font-bold text-rose-600 uppercase">Extra / Unassigned</span>
+            <div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><XCircle className="h-4 w-4" /></div>
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-3xl font-black text-rose-600">{extra.length}</span>
@@ -442,56 +437,40 @@ export function WishmasterReturnVerification() {
         </div>
       </div>
 
-      {/* --- DUAL SCANNER & INPUT PANELS --- */}
+      {/* INPUT PANELS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* PANEL 1: EXPECTED TIDs */}
+        {/* EXPECTED TIDs */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div className="flex items-center gap-2.5">
-              <span className="h-7 w-7 rounded-xl bg-blue-50 text-blue-700 font-extrabold text-xs flex items-center justify-center border border-blue-200/60">
-                1
-              </span>
+              <span className="h-7 w-7 rounded-xl bg-blue-50 text-blue-700 font-extrabold text-xs flex items-center justify-center">1</span>
               <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  Assigned Wishmaster TIDs
-                </h2>
-                <p className="text-[11px] text-slate-400">5-Character Tracking IDs</p>
+                <h2 className="text-sm font-bold text-slate-900">Assigned Wishmaster TIDs</h2>
+                <p className="text-[11px] text-slate-400">Tracking IDs List</p>
               </div>
             </div>
-            
-            {/* Mode Switcher */}
             <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-medium text-slate-600">
               <button
                 onClick={() => setExpectedMode('bulk')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  expectedMode === 'bulk'
-                    ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                    : 'hover:text-slate-900'
-                }`}
+                className={`px-3 py-1 rounded-lg ${expectedMode === 'bulk' ? 'bg-white shadow-sm text-indigo-600 font-bold' : ''}`}
               >
                 Bulk Paste
               </button>
               <button
                 onClick={() => setExpectedMode('scan')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  expectedMode === 'scan'
-                    ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                    : 'hover:text-slate-900'
-                }`}
+                className={`px-3 py-1 rounded-lg ${expectedMode === 'scan' ? 'bg-white shadow-sm text-indigo-600 font-bold' : ''}`}
               >
                 Scan Mode
               </button>
             </div>
           </div>
 
-          {/* Mode UI switch */}
           {expectedMode === 'bulk' ? (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5 text-blue-600" />
-                  Paste Assigned List
+                  <FileText className="h-3.5 w-3.5 text-blue-600" /> Paste Assigned List
                 </label>
                 <button
                   type="button"
@@ -502,15 +481,15 @@ export function WishmasterReturnVerification() {
                 </button>
               </div>
               <textarea
-                className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none resize-none bg-slate-50/50"
-                placeholder="Paste TIDs here. Extra chars like P2/P3 are filtered automatically to 5 chars..."
+                className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none bg-slate-50/50"
+                placeholder="Paste TIDs here..."
                 value={expectedBulkInput}
                 onChange={(e) => setExpectedBulkInput(e.target.value)}
               />
               <button
                 type="button"
                 onClick={handleAddExpectedBulk}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2"
               >
                 <ListPlus className="h-4 w-4" /> Load Assigned Tracking IDs
               </button>
@@ -518,39 +497,30 @@ export function WishmasterReturnVerification() {
           ) : (
             <div className="space-y-2.5">
               <label className="text-xs font-bold text-blue-600 flex items-center gap-1.5">
-                <Scan className="h-4 w-4 animate-pulse text-blue-500" />
-                Live Barcode Input (Expected TIDs)
+                <Scan className="h-4 w-4 animate-pulse text-blue-500" /> Live Barcode Input
               </label>
               <input
                 ref={expectedScanRef}
-                className="w-full font-mono uppercase text-sm p-3 rounded-xl border-2 border-blue-400 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
-                placeholder="Scan expected 5-character barcode..."
+                className="w-full font-mono uppercase text-sm p-3 rounded-xl border-2 border-blue-400 focus:ring-4 focus:ring-blue-500/10 outline-none"
+                placeholder="Scan expected barcode..."
                 value={expectedScanInput}
                 onChange={(e) => setExpectedScanInput(e.target.value)}
                 onKeyDown={handleAddExpectedScan}
               />
-              <p className="text-[11px] text-slate-400">
-                Trigger barcode reader or hit Enter to register item.
-              </p>
             </div>
           )}
 
-          {/* List display */}
           <div className="border border-slate-100 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1.5 bg-slate-50/50">
             {expectedIds.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">
-                No assigned tracking IDs loaded. Paste or scan above.
-              </p>
+              <p className="text-xs text-slate-400 text-center py-6">No assigned tracking IDs loaded.</p>
             ) : (
               expectedIds.map((id) => {
                 const isScanned = scannedIds.includes(id);
                 return (
                   <div
                     key={id}
-                    className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono transition-all border ${
-                      isScanned
-                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-                        : 'bg-white border-slate-200/80 text-slate-700'
+                    className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono border ${
+                      isScanned ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900' : 'bg-white border-slate-200/80 text-slate-700'
                     }`}
                   >
                     <span className="font-semibold">{id}</span>
@@ -570,53 +540,37 @@ export function WishmasterReturnVerification() {
           </div>
         </div>
 
-        {/* PANEL 2: RETURNED PRODUCTS SCANNER */}
+        {/* RETURNED TIDs */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div className="flex items-center gap-2.5">
-              <span className="h-7 w-7 rounded-xl bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-md shadow-indigo-600/20">
-                2
-              </span>
+              <span className="h-7 w-7 rounded-xl bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center">2</span>
               <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  Physically Returned Products
-                </h2>
-                <p className="text-[11px] text-slate-400">Scan returned items from Wishmaster</p>
+                <h2 className="text-sm font-bold text-slate-900">Physically Returned Products</h2>
+                <p className="text-[11px] text-slate-400">Scan returned items</p>
               </div>
             </div>
-
-            {/* Mode Switcher */}
             <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-medium text-slate-600">
               <button
                 onClick={() => setReturnedMode('scan')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  returnedMode === 'scan'
-                    ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                    : 'hover:text-slate-900'
-                }`}
+                className={`px-3 py-1 rounded-lg ${returnedMode === 'scan' ? 'bg-white shadow-sm text-indigo-600 font-bold' : ''}`}
               >
                 Scan Gun
               </button>
               <button
                 onClick={() => setReturnedMode('bulk')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  returnedMode === 'bulk'
-                    ? 'bg-white shadow-sm text-indigo-600 font-bold'
-                    : 'hover:text-slate-900'
-                }`}
+                className={`px-3 py-1 rounded-lg ${returnedMode === 'bulk' ? 'bg-white shadow-sm text-indigo-600 font-bold' : ''}`}
               >
                 Bulk Paste
               </button>
             </div>
           </div>
 
-          {/* Mode UI switch */}
           {returnedMode === 'scan' ? (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-indigo-600 flex items-center gap-1.5">
-                  <Scan className="h-4 w-4 animate-pulse text-indigo-500" />
-                  Active Physical Scanner Input
+                  <Scan className="h-4 w-4 animate-pulse text-indigo-500" /> Active Scanner Input
                 </label>
                 <button
                   type="button"
@@ -628,22 +582,18 @@ export function WishmasterReturnVerification() {
               </div>
               <input
                 ref={returnedScanRef}
-                className="w-full font-mono uppercase text-sm p-3 rounded-xl border-2 border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all shadow-sm"
-                placeholder="Scan returned product barcode here..."
+                className="w-full font-mono uppercase text-sm p-3 rounded-xl border-2 border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 outline-none"
+                placeholder="Scan returned barcode..."
                 value={returnedScanInput}
                 onChange={(e) => setReturnedScanInput(e.target.value)}
                 onKeyDown={handleAddReturnedScan}
               />
-              <p className="text-[11px] text-slate-400">
-                Instant verification against expected list as soon as you scan.
-              </p>
             </div>
           ) : (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <Keyboard className="h-3.5 w-3.5 text-indigo-600" />
-                  Paste Returned TIDs
+                  <Keyboard className="h-3.5 w-3.5 text-indigo-600" /> Paste Returned TIDs
                 </label>
                 <button
                   type="button"
@@ -654,37 +604,32 @@ export function WishmasterReturnVerification() {
                 </button>
               </div>
               <textarea
-                className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none resize-none bg-slate-50/50"
-                placeholder="Paste returned TIDs here. Extra chars like P2/P3 filtered automatically..."
+                className="w-full font-mono uppercase text-xs h-28 p-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none bg-slate-50/50"
+                placeholder="Paste returned TIDs..."
                 value={returnedBulkInput}
                 onChange={(e) => setReturnedBulkInput(e.target.value)}
               />
               <button
                 type="button"
                 onClick={handleAddReturnedBulk}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2"
               >
                 <ListPlus className="h-4 w-4" /> Verify Returned Items List
               </button>
             </div>
           )}
 
-          {/* List display */}
           <div className="border border-slate-100 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1.5 bg-slate-50/50">
             {scannedIds.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">
-                Ready to scan! Use USB/Bluetooth barcode scanner above.
-              </p>
+              <p className="text-xs text-slate-400 text-center py-6">Ready to scan returns.</p>
             ) : (
               scannedIds.map((id) => {
                 const isValidExpected = expectedIds.includes(id);
                 return (
                   <div
                     key={id}
-                    className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono transition-all border ${
-                      isValidExpected
-                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-                        : 'bg-rose-50/80 border-rose-200 text-rose-900'
+                    className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono border ${
+                      isValidExpected ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900' : 'bg-rose-50/80 border-rose-200 text-rose-900'
                     }`}
                   >
                     <span className="font-semibold">{id}</span>
@@ -706,85 +651,26 @@ export function WishmasterReturnVerification() {
 
       </div>
 
-      {/* --- SAVED RUN SNAPSHOTS HISTORY --- */}
-      {history.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <History className="h-5 w-5 text-indigo-600" />
-              <h3 className="text-sm font-bold text-slate-900">
-                Saved Verification Snapshots (Last 5)
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={handleClearHistory}
-              className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Clear History
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {history.map((session, idx) => (
-              <div
-                key={session.id}
-                className="border border-slate-200/80 rounded-xl p-3.5 bg-slate-50/50 hover:bg-white hover:border-indigo-300 transition-all flex flex-col justify-between text-xs space-y-3"
-              >
-                <div>
-                  <div className="flex items-center justify-between font-bold text-slate-900">
-                    <span>Run #{history.length - idx}</span>
-                    <span className="text-[10px] text-slate-400 font-normal">{session.timestamp}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 mt-2 space-y-1">
-                    <div className="flex justify-between">
-                      <span>Expected:</span>
-                      <b className="font-mono">{session.expectedCount}</b>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Returned:</span>
-                      <b className="font-mono">{session.returnedCount}</b>
-                    </div>
-                    <div className="flex justify-between text-emerald-600 font-semibold">
-                      <span>Matched:</span>
-                      <b className="font-mono">{session.matchedCount}</b>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleRestoreSession(session)}
-                  className="w-full py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-lg text-[11px] font-semibold transition-all shadow-sm"
-                >
-                  Load Run
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* --- RECONCILIATION AUDIT TABLE --- */}
+      {/* RECONCILIATION TABLE */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-3">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-indigo-600" />
-              Detailed Reconciliation Matrix
+              <ShieldCheck className="h-5 w-5 text-indigo-600" /> Detailed Reconciliation Matrix
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">Comprehensive audit sheet of expected vs returned items</p>
+            <p className="text-xs text-slate-400 mt-0.5">Audit sheet of expected vs returned items</p>
           </div>
 
           <div className="flex gap-2 text-xs">
             <button
               onClick={() => handleCopyScannedWithValidation(missing, 'Missing TIDs', 'missing')}
-              className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/60 font-semibold transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200/60 font-semibold flex items-center gap-1.5"
             >
               <Copy className="h-3.5 w-3.5" /> Copy Missing ({missing.length})
             </button>
             <button
               onClick={() => handleCopyScannedWithValidation(extra, 'Extra TIDs', 'extra')}
-              className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200/60 font-semibold transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200/60 font-semibold flex items-center gap-1.5"
             >
               <Copy className="h-3.5 w-3.5" /> Copy Extra ({extra.length})
             </button>
@@ -794,7 +680,7 @@ export function WishmasterReturnVerification() {
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider">
+              <tr className="border-b border-slate-200/80 bg-slate-50/80 text-slate-500 font-bold uppercase">
                 <th className="p-3.5">#</th>
                 <th className="p-3.5">Tracking ID</th>
                 <th className="p-3.5">Assigned to WM</th>
@@ -806,7 +692,7 @@ export function WishmasterReturnVerification() {
               {Array.from(new Set([...expectedIds, ...scannedIds])).length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-slate-400 font-sans">
-                    No active scan data to compare. Scan returned packages or import expected TIDs above.
+                    No active scan data to compare.
                   </td>
                 </tr>
               ) : (
@@ -838,20 +724,8 @@ export function WishmasterReturnVerification() {
                     <tr key={id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3.5 text-slate-400 font-sans">{index + 1}</td>
                       <td className="p-3.5 font-bold text-slate-900">{id}</td>
-                      <td className="p-3.5">
-                        {isExp ? (
-                          <span className="text-emerald-600 font-bold">YES</span>
-                        ) : (
-                          <span className="text-slate-300">NO</span>
-                        )}
-                      </td>
-                      <td className="p-3.5">
-                        {isScanned ? (
-                          <span className="text-emerald-600 font-bold">YES</span>
-                        ) : (
-                          <span className="text-slate-300">NO</span>
-                        )}
-                      </td>
+                      <td className="p-3.5">{isExp ? <span className="text-emerald-600 font-bold">YES</span> : <span className="text-slate-300">NO</span>}</td>
+                      <td className="p-3.5">{isScanned ? <span className="text-emerald-600 font-bold">YES</span> : <span className="text-slate-300">NO</span>}</td>
                       <td className="p-3.5">{statusBadge}</td>
                     </tr>
                   );
