@@ -10,7 +10,9 @@ import {
   XCircle,
   Copy,
   History,
-  CornerDownLeft
+  CornerDownLeft,
+  Download,
+  Zap
 } from 'lucide-react';
 import { Barcode } from '../components/Barcode.jsx';
 import { useSettings } from '../lib/settings.js';
@@ -30,6 +32,9 @@ export function BulkBarcodes() {
   const [viewMode, setViewMode] = useState(false);
   const [onlyTrackingIds, setOnlyTrackingIds] = useState(true);
   
+  // --- EXTENSION INTEGRATION STATE ---
+  const [isExtensionInstalled, setIsExtensionInstalled] = useState(false);
+
   // --- EXCLUSION FILTER CONFIGURATION STATES ---
   const [enableExclusions, setEnableExclusions] = useState(true);
   const [excludeWordsInput, setExcludeWordsInput] = useState(
@@ -48,6 +53,24 @@ export function BulkBarcodes() {
 
   const fileRef = useRef(null);
   const TRACKING_ID_EXTRACT_REGEX = /^[A-Z]{3,4}[A-Z0-9\-_]{5,15}$/i;
+
+  // Extension handshake verification on mount
+  useEffect(() => {
+    const handleExtensionResponse = (e) => {
+      if (e.detail && e.detail.installed) {
+        setIsExtensionInstalled(true);
+      }
+    };
+
+    window.addEventListener('BARCODE_EXTENSION_INSTALLED', handleExtensionResponse);
+
+    // Ping extension
+    window.dispatchEvent(new CustomEvent('CHECK_BARCODE_EXTENSION'));
+
+    return () => {
+      window.removeEventListener('BARCODE_EXTENSION_INSTALLED', handleExtensionResponse);
+    };
+  }, []);
 
   // Sync history log array changes instantly with browser storage
   useEffect(() => {
@@ -122,7 +145,27 @@ export function BulkBarcodes() {
     toast(`Copied ${entries.length} filtered barcode tracking IDs!`, 'success');
   };
 
-  // Saves generated snapshot data into local history loop array (Max 10 entries)
+  // Directly push tracking IDs into extension + fallback clipboard copy
+  const handlePushToExtension = async () => {
+    if (entries.length === 0) return;
+    const formattedList = entries.map(entry => entry.value).join('\n');
+
+    // Dispatch event directly to content.js
+    window.dispatchEvent(
+      new CustomEvent('LOAD_TRACKING_IDS_TO_EXTENSION', {
+        detail: { trackingIds: formattedList }
+      })
+    );
+
+    try {
+      await navigator.clipboard.writeText(formattedList);
+    } catch (e) {
+      // Ignore clipboard write restrictions if any
+    }
+
+    toast(`Loaded ${entries.length} Tracking IDs into extension!`, 'success');
+  };
+
   const appendToHistory = (text, itemQuantity) => {
     if (!text.trim()) return;
     
@@ -134,7 +177,6 @@ export function BulkBarcodes() {
     };
 
     setHistoryLog(prev => {
-      // Eliminate exact matches to avoid clutter, keeping chronological ordering clean
       const filtered = prev.filter(item => item.textBlock.trim() !== text.trim());
       return [newRecord, ...filtered].slice(0, 10);
     });
@@ -150,7 +192,7 @@ export function BulkBarcodes() {
     setEntries(built);
     
     if (built.length > 0) {
-      appendToHistory(rawText, built.length); // Commit current state snapshot to record array
+      appendToHistory(rawText, built.length);
       setViewMode(true);
     } else {
       toast('No valid tracking IDs found matching your filter rules.', 'error');
@@ -185,6 +227,7 @@ export function BulkBarcodes() {
     return { total: entries.length };
   }, [entries]);
 
+  // --- SCANNING DECK SCREEN ---
   if (viewMode) {
     return (
       <div className="fixed inset-0 bg-white z-[9999] overflow-y-auto flex flex-col items-center p-6">
@@ -202,6 +245,34 @@ export function BulkBarcodes() {
           >
             <Copy className="h-3.5 w-3.5" /> Copy Filtered TIDs
           </button>
+
+          {/* DYNAMIC EXTENSION ACTION BUTTON */}
+          {isExtensionInstalled ? (
+            <button 
+              onClick={handlePushToExtension}
+              className="bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded shadow hover:bg-emerald-700 transition-all flex items-center gap-1.5"
+            >
+              <Zap className="h-3.5 w-3.5" /> Load into Injector
+            </button>
+          ) : (
+            <a 
+             href="/barcode-auto-scanner.zip"
+  download="barcode-auto-scanner.zip"
+              onClick={() => {
+                alert(
+                  "📦 Extension downloading!\n\nHow to load it into Chrome:\n" +
+                  "1. Extract the downloaded zip file.\n" +
+                  "2. Open Chrome and go to 'chrome://extensions'\n" +
+                  "3. Enable 'Developer mode' (top-right toggle).\n" +
+                  "4. Click 'Load unpacked' and select the extracted folder.\n" +
+                  "5. Refresh this page!"
+                );
+              }}
+              className="bg-amber-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded shadow hover:bg-amber-600 transition-all flex items-center gap-1.5"
+            >
+              <Download className="h-3.5 w-3.5" /> Download Extension (.zip)
+            </a>
+          )}
 
           <span className="bg-ink-100 text-ink-800 text-xs font-bold px-3 py-2 rounded shadow-sm border border-ink-200">
             Total Unique Items: {entries.length}
@@ -246,6 +317,7 @@ export function BulkBarcodes() {
     );
   }
 
+  // --- CONFIGURATION FORM VIEW ---
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -369,7 +441,7 @@ export function BulkBarcodes() {
             />
           </div>
 
-          {/* NEW MODULE: Local Workspace History Deck Panel Tracker */}
+          {/* Local Workspace History Deck Panel Tracker */}
           <div className="card p-5 border border-ink-200 bg-white">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5 font-bold text-sm text-ink-800">
