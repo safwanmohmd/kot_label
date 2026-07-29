@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shipments Reco Test Dashboard</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #f4f6f8; }
+    .card { background: white; padding: 24px; border-radius: 8px; max-width: 500px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    input { width: 100%; padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
+    .log { margin-top: 20px; background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 6px; font-family: monospace; height: 180px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Pending Shipment Reconciliation</h2>
+  <label>Scan Shipment:</label>
+  <input type="text" id="scan-input" placeholder="Click here before starting test..." />
+
+  <h3>Scan Log:</h3>
+  <div id="log" class="log">Waiting for scans...</div>
+</div>
+
+<script>
+  const input = document.getElementById('scan-input');
+  const log = document.getElementById('log');
+  let keyTimes = [];
+
+  // Detect typing speed (Simulating Ekart's Anti-Manual Entry detection)
+  input.addEventListener('keydown', (e) => {
+    keyTimes.push(performance.now());
+  });
+
+  input.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+      const val = input.value.trim();
+      if (!val) return;
+
+      // Calculate average time between keystrokes
+      let isScanner = false;
+      if (keyTimes.length > 3) {
+        let totalDiff = 0;
+        for (let i = 1; i < keyTimes.length; i++) {
+          totalDiff += (keyTimes[i] - keyTimes[i-1]);
+        }
+        const avgSpeed = totalDiff / keyTimes.length;
+        
+        // Physical scanners type faster than 30ms per character
+        if (avgSpeed < 30) {
+          isScanner = true;
+        }
+      }
+
+      if (isScanner) {
+        log.innerHTML += `<div style="color:#4ade80;">✅ SUCCESS (Scanner Detected): ${val}</div>`;
+      } else {
+        log.innerHTML += `<div style="color:#f87171;">⚠️ WARNING: Please scan shipment label, manual input not allowed! (${val})</div>`;
+      }
+
+      keyTimes = [];
+      input.value = '';
+      log.scrollTop = log.scrollHeight;
+    }
+  });
+</script>
+
+</body>
+</html>
