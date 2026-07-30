@@ -37,14 +37,12 @@ export function WishmasterReturnVerification() {
     );
   });
 
-  // Save filter preferences to localStorage
   useEffect(() => {
     localStorage.setItem('wm_returns_isolate_tracking', isolateTracking);
     localStorage.setItem('wm_returns_enable_exclusions', enableExclusions);
     localStorage.setItem('wm_returns_exclude_words', excludeWords);
   }, [isolateTracking, enableExclusions, excludeWords]);
 
-  // --- DIRECT EXTRACTION TRACKING EXTRACTOR ---
   const extractTrackingIds = (input) => {
     if (!input) return [];
 
@@ -59,18 +57,12 @@ export function WishmasterReturnVerification() {
     const seen = new Set();
 
     if (isolateTracking) {
-      // Find all standard tracking ID patterns across the raw input string directly
       const trackingIdRegex = /[A-Z]{3,4}[A-Z0-9\-_]{5,15}/gi;
       const matches = input.match(trackingIdRegex) || [];
 
       for (let match of matches) {
         const cleanId = match.toUpperCase();
-
-        // Check against excluded list exactly
-        if (enableExclusions && blockedKeywords.has(cleanId)) {
-          continue;
-        }
-
+        if (enableExclusions && blockedKeywords.has(cleanId)) continue;
         if (!seen.has(cleanId)) {
           seen.add(cleanId);
           filtered.push(cleanId);
@@ -81,11 +73,7 @@ export function WishmasterReturnVerification() {
       for (let line of lines) {
         const cleanId = line.trim().toUpperCase();
         if (!cleanId) continue;
-
-        if (enableExclusions && blockedKeywords.has(cleanId)) {
-          continue;
-        }
-
+        if (enableExclusions && blockedKeywords.has(cleanId)) continue;
         if (!seen.has(cleanId)) {
           seen.add(cleanId);
           filtered.push(cleanId);
@@ -96,7 +84,6 @@ export function WishmasterReturnVerification() {
     return filtered;
   };
 
-  // --- STATE WITH LOCALSTORAGE INITIALIZATION ---
   const [expectedIds, setExpectedIds] = useState(() => {
     try {
       const saved = localStorage.getItem(CURRENT_SESSION_KEY);
@@ -213,23 +200,11 @@ export function WishmasterReturnVerification() {
     toast('Started a new fresh verification session', 'info');
   };
 
-  const handleCopyScannedWithValidation = (idList, label, type) => {
+  // REVISED UNBLOCKED COPY HANDLER
+  const handleCopyList = (idList, label) => {
     if (!idList || idList.length === 0) {
       toast(`No ${label} data to copy!`, 'error');
       return;
-    }
-
-    if (type === 'scanned') {
-      const uniqueScanned = new Set(scannedIds);
-      if (uniqueScanned.size !== scannedIds.length) {
-        toast(`Cannot copy: Duplicate tracking IDs detected in scanned list!`, 'error');
-        return;
-      }
-
-      if (extra.length > 0) {
-        toast(`Cannot copy: ${extra.length} mismatched / unexpected item(s) found in scanned returns!`, 'error');
-        return;
-      }
     }
 
     const textToCopy = idList.join('\n');
@@ -569,9 +544,7 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() =>
-                    handleCopyScannedWithValidation(expectedIds, 'Expected TIDs', 'expected')
-                  }
+                  onClick={() => handleCopyList(expectedIds, 'Expected TIDs')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
                   <Copy className="h-3 w-3" /> Copy Loaded ({expectedIds.length})
@@ -679,12 +652,10 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() =>
-                    handleCopyScannedWithValidation(scannedIds, 'Returned TIDs', 'scanned')
-                  }
+                  onClick={() => handleCopyList(scannedIds, 'Returned TIDs')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
-                  <Copy className="h-3 w-3" /> Copy Scanned ({scannedIds.length})
+                  <Copy className="h-3 w-3" /> Copy All Scanned ({scannedIds.length})
                 </button>
               </div>
               <input
@@ -704,12 +675,10 @@ export function WishmasterReturnVerification() {
                 </label>
                 <button
                   type="button"
-                  onClick={() =>
-                    handleCopyScannedWithValidation(scannedIds, 'Returned TIDs', 'scanned')
-                  }
+                  onClick={() => handleCopyList(scannedIds, 'Returned TIDs')}
                   className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
                 >
-                  <Copy className="h-3 w-3" /> Copy Returned List
+                  <Copy className="h-3 w-3" /> Copy All Scanned ({scannedIds.length})
                 </button>
               </div>
               <textarea
@@ -771,18 +740,24 @@ export function WishmasterReturnVerification() {
             <p className="text-xs text-slate-400 mt-0.5">Audit sheet of expected vs returned items</p>
           </div>
 
-          <div className="flex gap-2 text-xs">
+          <div className="flex gap-2 text-xs flex-wrap">
             <button
-              onClick={() => handleCopyScannedWithValidation(missing, 'Missing TIDs', 'missing')}
-              className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200/60 font-semibold flex items-center gap-1.5"
+              onClick={() => handleCopyList(matched, 'Matched TIDs')}
+              className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/60 font-semibold flex items-center gap-1.5 hover:bg-emerald-100 transition-colors"
             >
-              <Copy className="h-3.5 w-3.5" /> Copy Missing ({missing.length})
+              <Copy className="h-3.5 w-3.5 text-emerald-600" /> Copy Matched ({matched.length})
             </button>
             <button
-              onClick={() => handleCopyScannedWithValidation(extra, 'Extra TIDs', 'extra')}
-              className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200/60 font-semibold flex items-center gap-1.5"
+              onClick={() => handleCopyList(missing, 'Missing TIDs')}
+              className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200/60 font-semibold flex items-center gap-1.5 hover:bg-amber-100 transition-colors"
             >
-              <Copy className="h-3.5 w-3.5" /> Copy Extra ({extra.length})
+              <Copy className="h-3.5 w-3.5 text-amber-600" /> Copy Missing ({missing.length})
+            </button>
+            <button
+              onClick={() => handleCopyList(extra, 'Extra TIDs')}
+              className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-800 border border-rose-200/60 font-semibold flex items-center gap-1.5 hover:bg-rose-100 transition-colors"
+            >
+              <Copy className="h-3.5 w-3.5 text-rose-600" /> Copy Extra ({extra.length})
             </button>
           </div>
         </div>
