@@ -63,11 +63,77 @@ const EMPTY = {
   show_second_barcode: true,
 };
 
-// Generates raw PRN ZPL string
+// Generates raw PRN ZPL string based on selected label style
 function generatePrnContent(form) {
+  const style = form.label_style || 'standard';
+
+  // -------------------------------------------------------------
+  // STYLE 2: DUAL STACKED
+  // -------------------------------------------------------------
+  if (style === 'dual') {
+    return `CT~~CD,~CC^~CT~
+^XA
+~TA000~JSN^LT0^MNW^MTD^PON^PMN^LH0,0^JMA^PR5,5~SD30^JUS^LRN^CI27^PA0,1,1,0
+^XZ
+^XA
+^MMT^PW669^LL467^LS0
+^FO16,16^GB637,435,2^FS
+^FT30,42^A0N,14,14^FDCourier:^FS
+^FT30,70^A0N,24,24^FD${form.courier_name || 'COURIER'}^FS
+^FT480,70^A0N,22,22^FD(DEL/MUD)^FS
+^FO16,80^GB637,0,2^FS
+^FT30,105^A0N,14,14^FDDELIVER TO:^FS
+^FT30,130^A0N,22,22^FD${form.receiver_name || ''}^FS
+^FT30,155^A0N,18,18^FD${form.address_line1 || ''} ${form.address_line2 || ''}^FS
+^FT30,180^A0N,18,18^FDCITY: ${form.receiver_city || ''} (${form.receiver_postal_code || ''})^FS
+^FO16,195^GB637,0,1^FS
+${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
+^FT30,265^A0N,16,16^FDORDER REF: ${form.notes || '-'}^FS
+^FO16,280^GB637,0,2^FS
+^BY2.2,3,65^FT30,365^BCN,,N,N,N
+^FD${form.tracking_id || ''}^FS
+^FT30,395^A0N,24,26^FD${form.tracking_id || ''}^FS
+^PQ1,0,1,Y
+^XZ
+`;
+  }
+
+  // -------------------------------------------------------------
+  // STYLE 3: HIGH DENSITY / BOLD TRACKING
+  // -------------------------------------------------------------
+  if (style === 'bold') {
+    return `CT~~CD,~CC^~CT~
+^XA
+~TA000~JSN^LT0^MNW^MTD^PON^PMN^LH0,0^JMA^PR5,5~SD30^JUS^LRN^CI27^PA0,1,1,0
+^XZ
+^XA
+^MMT^PW669^LL467^LS0
+^FO16,16^GB637,435,4^FS
+^FO16,16^GB637,50,1,5^FS
+^FT30,50^A0N,26,26^FR^FD${(form.courier_name || 'COURIER').toUpperCase()}^FS
+^FT500,50^A0N,20,20^FR^FD(DEL/MUD)^FS
+^FT30,95^A0N,14,14^FDSHIP TO:^FS
+^FT30,120^A0N,22,22^FD${form.receiver_name || ''}^FS
+^FT30,145^A0N,18,18^FD${form.address_line1 || ''}^FS
+^FT30,170^A0N,18,18^FD${form.receiver_city || ''} - ${form.receiver_postal_code || ''}^FS
+^FO330,80^GB0,110,1^FS
+^FT345,100^A0N,14,14^FDORDER DETAILS:^FS
+^FT345,125^A0N,18,18^FD${form.notes || '-'}^FS
+^FT345,155^A0N,14,14^FDWEIGHT: ${form.weight || '0.50'} KG^FS
+^FO16,190^GB637,0,2^FS
+^BY2.5,3,80^FT100,300^BCN,,N,N,N
+^FD${form.tracking_id || ''}^FS
+^FT180,340^A0N,28,30^FD${form.tracking_id || ''}^FS
+^PQ1,0,1,Y
+^XZ
+`;
+  }
+
+  // -------------------------------------------------------------
+  // STYLE 1: STANDARD LOGISTICS (DEFAULT)
+  // -------------------------------------------------------------
   const line1 = form.address_line1 ? `^FT30,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
   const line2 = form.address_line2 ? `^FT30,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
-  
   const backupData = form.notes || form.tracking_id || '';
   
   const secondBarcodeZpl = form.show_second_barcode && backupData
