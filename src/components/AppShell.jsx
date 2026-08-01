@@ -17,6 +17,7 @@ import {
   FileCode,
   FileSpreadsheet,
   PackageCheck, // Added for Return Verification icon
+  ListFilter,    // Added for Tracking Sorter icon
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -37,6 +38,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet },
       { to: '/verifytid', label: 'Return Verification', icon: PackageCheck }, // ADDED RETURN VERIFICATION
+      { to: '/sort', label: 'Tracking Sorter', icon: ListFilter },           // ADDED TRACKING SORTER
       { to: '/unmask', label: 'Unmask Deck', icon: Eye },
       { to: '/lp', label: 'Lp Tracker', icon: ShieldAlert },
       { to: '/manualdelivery', label: 'Manual Delivery', icon: Truck },

@@ -15,6 +15,7 @@ import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
 import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
 import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
 import { WishmasterReturnVerification } from './pages/ReturnVerification.jsx';
+import { TrackingSorter } from './pages/TrackingSorter.jsx';
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
             <Route path="/verifytid" element={<WishmasterReturnVerification />} />
+            <Route path="/sort" element={<TrackingSorter />} />
           </Routes>
         </AppShell>
       </BrowserRouter>
