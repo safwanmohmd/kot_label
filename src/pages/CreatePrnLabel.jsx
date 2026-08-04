@@ -79,14 +79,13 @@ function generatePrnContent(form) {
 ^FO16,16^GB637,435,2^FS
 ^FT30,42^A0N,14,14^FDCourier:^FS
 ^FT30,70^A0N,24,24^FD${form.courier_name || 'COURIER'}^FS
-^FT480,70^A0N,22,22^FD(DEL/MUD)^FS
 ^FO16,80^GB637,0,2^FS
 ^FT30,105^A0N,14,14^FDDELIVER TO:^FS
 ^FT30,130^A0N,22,22^FD${form.receiver_name || ''}^FS
 ^FT30,155^A0N,18,18^FD${form.address_line1 || ''} ${form.address_line2 || ''}^FS
 ^FT30,180^A0N,18,18^FDCITY: ${form.receiver_city || ''} (${form.receiver_postal_code || ''})^FS
 ^FO16,195^GB637,0,1^FS
-${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
+${form.notes ? `^BY2,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 ^FT30,265^A0N,16,16^FDORDER REF: ${form.notes || '-'}^FS
 ^FO16,280^GB637,0,2^FS
 ^BY2.2,3,65^FT30,365^BCN,,N,N,N
@@ -97,7 +96,7 @@ ${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 `;
   }
 
-  // STYLE 3: HIGH DENSITY / BOLD TRACKING (FIXED ALIGNMENT & HEADER)
+  // STYLE 3: HIGH DENSITY / BOLD TRACKING
   if (style === 'bold') {
     return `CT~~CD,~CC^~CT~
 ^XA
@@ -108,7 +107,6 @@ ${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 ^FO16,16^GB637,435,4^FS
 ^FO16,16^GB637,50,5^FS
 ^FT30,48^A0N,26,26^FR^FD${(form.courier_name || 'COURIER').toUpperCase()}^FS
-^FT500,48^A0N,20,20^FR^FD(DEL/MUD)^FS
 ^FT30,90^A0N,14,14^FDSHIP TO:^FS
 ^FT30,115^A0N,22,22^FD${form.receiver_name || ''}^FS
 ^FT30,140^A0N,18,18^FD${form.address_line1 || ''}^FS
@@ -126,7 +124,7 @@ ${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 `;
   }
 
-  // STYLE 1: STANDARD LOGISTICS (SCANNABLE SIDE BARCODE & ALIGNED RIGHT)
+  // STYLE 1: STANDARD LOGISTICS
   const line1 = form.address_line1 ? `^FT30,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
   const line2 = form.address_line2 ? `^FT30,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
   const backupData = form.notes || form.tracking_id || '';
@@ -134,10 +132,8 @@ ${form.notes ? `^BY1.5,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 
   const lineLength = hasSecond ? 510 : 637;
   
-  // ^BY1.5,2,40 ensures crisp module width for 100% scan rate on thermal printers
-  // ^FO575,35 gives safe white space (quiet zone) around the barcode
   const secondBarcodeZpl = hasSecond
-    ? `^BY1.5,2,40^FO575,35^BCR,40,N,N,N\n^FD${backupData}^FS\n^FT640,400^A0R,14,14^FD${backupData}^FS\n`
+    ? `^BY2,2,40^FO570,35^BCR,40,N,N,N\n^FD${backupData}^FS\n^FT640,400^A0R,14,14^FD${backupData}^FS\n`
     : '';
 
   return `CT~~CD,~CC^~CT~
@@ -176,20 +172,19 @@ ${secondBarcodeZpl}^FO16,290^GB${lineLength},0,2^FS
 ^BY2.2,3,75^FT30,395^BCN,,N,N,N,A
 ^FD${form.tracking_id || ''}^FS
 ^FT30,425^A0N,28,32^CI28^FD${form.tracking_id || ''}^FS^CI27
-^FT430,425^A0N,24,24^CI28^FD(DEL/MUD)^FS^CI27
 ^PQ1,0,1,Y
 ^XZ
 `;
 }
 
 // SVG Generator for Barcode
-function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayValue = false) {
+function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayValue = false, moduleWidth = 2) {
   if (!trackingId) return '';
   try {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     JsBarcode(svg, sanitizeForCode39(trackingId), {
       format: barcodeType === 'CODE39' ? 'CODE39' : 'CODE128',
-      width: 2,
+      width: moduleWidth,
       height: height,
       displayValue: displayValue,
       font: 'monospace',
@@ -198,7 +193,7 @@ function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayV
       background: 'transparent',
       lineColor: '#000000',
     });
-    svg.setAttribute('style', 'shape-rendering: crispEdges;');
+    svg.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
     return svg.outerHTML;
   } catch (e) {
     return `<div style="font-family: monospace; font-size: 14px;">${trackingId}</div>`;
@@ -589,7 +584,6 @@ export function CreatePrnLabel() {
           </div>
 
           <div className="space-y-4">
-            {/* AI-Style Address Extractor Input */}
             <div className="bg-brand-50/50 p-3 rounded-lg border border-brand-200/60">
               <div className="flex items-center gap-1.5 mb-1.5 text-brand-700 text-xs font-bold uppercase tracking-wider">
                 <Sparkles className="h-3.5 w-3.5 text-brand-600" />
@@ -864,35 +858,35 @@ export function PrnLabelPreview({ form }) {
           background: 'transparent',
           lineColor: '#000000',
         });
-        primaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
+        primaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
       } catch (e) {
         console.error('Primary Barcode Error:', e);
       }
     }
   }, [form?.tracking_id, form?.barcode_type, style]);
 
-  // Secondary Backup Barcode (Style 1)
+  // Secondary Backup Barcode
   useEffect(() => {
     const backupValue = form?.notes || form?.tracking_id;
     if (secondaryBarcodeSvgRef.current && form?.show_second_barcode && backupValue && style === 'standard') {
       try {
         JsBarcode(secondaryBarcodeSvgRef.current, sanitizeForCode39(backupValue), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
-          width: 1.5,            
+          width: 1.8,            
           height: 40,           
           displayValue: false,
-          margin: 4,            
+          margin: 2,            
           background: '#ffffff',
           lineColor: '#000000',
         });
-        secondaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
+        secondaryBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
       } catch (e) {
         console.error('Secondary Barcode Error:', e);
       }
     }
   }, [form?.notes, form?.tracking_id, form?.barcode_type, form?.show_second_barcode, style]);
 
-  // Order Barcode (Style 2)
+  // Order Barcode
   useEffect(() => {
     if (orderBarcodeSvgRef.current && form?.notes && style === 'dual') {
       try {
@@ -905,7 +899,7 @@ export function PrnLabelPreview({ form }) {
           background: 'transparent',
           lineColor: '#000000',
         });
-        orderBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges;');
+        orderBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
       } catch (e) {
         console.error('Order Barcode Error:', e);
       }
@@ -936,14 +930,10 @@ export function PrnLabelPreview({ form }) {
       >
         {style === 'dual' && (
           <div style={{ width: '100%', height: '100%', border: '2px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', justify: 'space-between', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
               <div>
                 <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>EXPRESS COURIER</div>
                 <div style={{ fontSize: '20px', fontWeight: '900' }}>{form?.courier_name || 'COURIER'}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>HUB ROUTE</div>
-                <div style={{ fontSize: '22px', fontWeight: '900' }}>(DEL/MUD)</div>
               </div>
             </div>
 
@@ -975,9 +965,8 @@ export function PrnLabelPreview({ form }) {
 
         {style === 'bold' && (
           <div style={{ width: '100%', height: '100%', border: '4px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div style={{ background: '#000', color: '#fff', padding: '8px 12px', margin: '-12px -12px 8px -12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: '#000', color: '#fff', padding: '8px 12px', margin: '-12px -12px 8px -12px', display: 'flex', justify: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: '900', fontSize: '20px' }}>{(form?.courier_name || 'COURIER').toUpperCase()}</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '16px', background: '#fff', color: '#000', padding: '2px 8px', borderRadius: '4px' }}>(DEL/MUD)</span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
@@ -994,7 +983,7 @@ export function PrnLabelPreview({ form }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', itemsCenter: 'center', justifyContent: 'center', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
               <svg ref={primaryBarcodeSvgRef}></svg>
               <div style={{ fontSize: '24px', fontWeight: '900', fontFamily: 'monospace', letterSpacing: '0.1em', marginTop: '6px' }}>{form?.tracking_id || '-'}</div>
             </div>
@@ -1047,7 +1036,7 @@ export function PrnLabelPreview({ form }) {
               <span style={{ fontSize: '15px', fontWeight: '700' }}>ORDER ID: {form?.notes || '-'}</span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', justify: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
+            <div style={{ display: 'flex', itemsCenter: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '2px' }}>
                   <Barcode className="h-3.5 w-3.5" />
@@ -1058,7 +1047,6 @@ export function PrnLabelPreview({ form }) {
                   {form?.tracking_id || '-'}
                 </div>
               </div>
-              <div style={{ fontSize: '20px', fontWeight: '900', letterSpacing: '0.05em' }}>(DEL/MUD)</div>
             </div>
           </div>
         )}
@@ -1087,46 +1075,53 @@ function settingsDefaults(settings) {
   };
 }
 
+/* Renders HTML String for Direct Print Engine (Print-Forced High Contrast Pure SVGs) */
 function renderPrnLabelHtml(form) {
   const style = form?.label_style || 'standard';
   const addressLines = [form?.address_line1, form?.address_line2].filter(Boolean);
-  const primaryBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, form?.barcode_type, style === 'bold' ? 80 : 65, false);
+  
+  // Barcode graphics
+  const primaryBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, form?.barcode_type, style === 'bold' ? 80 : 65, false, style === 'bold' ? 2.5 : 2.2);
   const backupValue = form?.notes || form?.tracking_id;
+  
   const secondaryBarcodeSvg = form?.show_second_barcode && backupValue 
-    ? generateBarcodeSvgString(backupValue, form?.barcode_type, 40, false)
+    ? generateBarcodeSvgString(backupValue, form?.barcode_type, 40, false, 1.8)
     : '';
-  const orderBarcodeSvg = form?.notes ? generateBarcodeSvgString(form.notes, 'CODE128', 35, false) : '';
+  const orderBarcodeSvg = form?.notes ? generateBarcodeSvgString(form.notes, 'CODE128', 35, false, 1.5) : '';
+
+  // Embedded Printer-Safe Vector Icons (Forced Black/White contrast)
+  const iconPackageCheck = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>`;
+  const iconTruck = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
+  const iconMapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+  const iconFileText = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+  const iconBarcode = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M3 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M17 5v14"/><path d="M21 5v14"/></svg>`;
 
   if (style === 'dual') {
     return `
-      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box;">
+      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
         <div style="width:100%; height:100%; border:2px solid #000; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between;">
           <div style="display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:8px;">
             <div>
-              <div style="font-size:12px; font-weight:bold; color:#64748b;">EXPRESS COURIER</div>
+              <div style="font-size:12px; font-weight:bold; color:#000;">EXPRESS COURIER</div>
               <div style="font-size:20px; font-weight:900;">${form?.courier_name || 'COURIER'}</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:12px; font-weight:bold; color:#64748b;">HUB ROUTE</div>
-              <div style="font-size:22px; font-weight:900;">(DEL/MUD)</div>
             </div>
           </div>
           <div style="font-size:13px;">
-            <div style="font-weight:bold; color:#64748b;">DELIVER TO:</div>
+            <div style="font-weight:bold; color:#000;">DELIVER TO:</div>
             <div style="font-size:18px; font-weight:900;">${form?.receiver_name || ''}</div>
             <div>${form?.address_line1 || ''} ${form?.address_line2 || ''}</div>
             <div style="font-size:14px; font-weight:bold;">CITY: ${form?.receiver_city || ''} (${form?.receiver_postal_code || ''})</div>
           </div>
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="border-top:1px solid #000; padding-top:6px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-size:10px; font-weight:bold; color:#64748b;">ORDER REF BARCODE</div>
+              <div style="font-size:10px; font-weight:bold; color:#000;">ORDER REF BARCODE</div>
               ${orderBarcodeSvg}
               <div style="font-size:12px; font-family:monospace; font-weight:bold;">${form?.notes || '-'}</div>
             </div>
-            <div style="font-size:12px; font-weight:bold; background:#e2e8f0; padding:6px 12px; border-radius:4px;">PREPAID</div>
+            <div style="font-size:12px; font-weight:bold; border:1px solid #000; padding:6px 12px; border-radius:4px;">PREPAID</div>
           </div>
           <div style="border-top:2px solid #000; padding-top:6px;">
-            <div style="font-size:10px; font-weight:bold; color:#64748b;">PRIMARY WAYBILL</div>
+            <div style="font-size:10px; font-weight:bold; color:#000;">PRIMARY WAYBILL</div>
             ${primaryBarcodeSvg}
             <div style="font-size:20px; font-weight:900; font-family:monospace; letter-spacing:0.08em;">${form?.tracking_id || '-'}</div>
           </div>
@@ -1137,26 +1132,25 @@ function renderPrnLabelHtml(form) {
 
   if (style === 'bold') {
     return `
-      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box;">
+      <div style="width:669px; height:467px; background:#fff; color:#000; font-family:sans-serif; padding:16px; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
         <div style="width:100%; height:100%; border:4px solid #000; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between;">
-          <div style="background:#000; color:#fff; padding:8px 12px; margin:-12px -12px 8px -12px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:900; font-size:20px;">${(form?.courier_name || 'COURIER').toUpperCase()}</span>
-            <span style="font-family:monospace; font-weight:bold; font-size:16px; background:#fff; color:#000; padding:2px 8px; border-radius:4px;">(DEL/MUD)</span>
+          <div style="background:#000 !important; color:#fff !important; padding:8px 12px; margin:-12px -12px 8px -12px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:900; font-size:20px; color:#ffffff !important;">${(form?.courier_name || 'COURIER').toUpperCase()}</span>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; border-bottom:2px solid #000; padding-bottom:8px;">
             <div>
-              <div style="font-weight:bold; font-size:10px; color:#64748b;">SHIP TO:</div>
+              <div style="font-weight:bold; font-size:10px; color:#000;">SHIP TO:</div>
               <div style="font-weight:900; font-size:16px;">${form?.receiver_name || ''}</div>
               <div style="font-size:12px;">${form?.address_line1 || ''}</div>
               <div style="font-size:12px;">${form?.receiver_city || ''} - ${form?.receiver_postal_code || ''}</div>
             </div>
-            <div style="border-left:1px solid #cbd5e1; padding-left:8px;">
-              <div style="font-weight:bold; font-size:10px; color:#64748b;">ORDER DETAILS:</div>
+            <div style="border-left:1px solid #000; padding-left:8px;">
+              <div style="font-weight:bold; font-size:10px; color:#000;">ORDER DETAILS:</div>
               <div style="font-family:monospace; font-weight:bold; font-size:14px;">${form?.notes || '-'}</div>
-              <div style="font-size:11px; color:#475569; margin-top:6px;">WEIGHT: ${form?.weight || '0.50'} KG</div>
+              <div style="font-size:11px; color:#000; margin-top:6px;">WEIGHT: ${form?.weight || '0.50'} KG</div>
             </div>
           </div>
-          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
+          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px; border:1px solid #000; border-radius:6px;">
             ${primaryBarcodeSvg}
             <div style="font-size:24px; font-weight:900; font-family:monospace; letter-spacing:0.1em; margin-top:6px;">${form?.tracking_id || '-'}</div>
           </div>
@@ -1178,8 +1172,8 @@ function renderPrnLabelHtml(form) {
       box-sizing: border-box;
       overflow: hidden;
       padding: 16px;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     ">
       <div style="
         width: 100%;
@@ -1226,23 +1220,27 @@ function renderPrnLabelHtml(form) {
           margin-bottom: 10px;
           padding-right: ${hasSecond ? '100px' : '0px'};
         ">
-          <div style="display: flex; items-center; gap: 8px;">
-            <div style="background-color: #000000; color: #ffffff; padding: 5px; border-radius: 6px; display: inline-flex;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="background-color: #000000 !important; color: #ffffff !important; padding: 5px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;">
+              ${iconPackageCheck}
             </div>
             <span style="font-size: 22px; font-weight: 900; letter-spacing: 0.05em;">KOT - PRN</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px; background-color: #f1f5f9; padding: 4px 12px; border-radius: 4px; border: 1px solid #cbd5e1;">
+          <div style="display: flex; align-items: center; gap: 6px; background-color: #ffffff; padding: 4px 12px; border-radius: 4px; border: 1px solid #000000;">
+            ${iconTruck}
             <span style="font-size: 16px; font-weight: 700;">${form?.courier_name || 'COURIER'}</span>
           </div>
         </div>
 
         <div style="min-height: 120px; padding-right: ${hasSecond ? '100px' : '0px'};">
-          <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 4px; letter-spacing: 0.05em;">SHIP TO:</div>
+          <div style="display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #000000; margin-bottom: 4px; letter-spacing: 0.05em;">
+            ${iconMapPin}
+            <span>SHIP TO:</span>
+          </div>
           <div style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">
             ${form?.receiver_name || ''}
           </div>
-          <div style="font-size: 14px; line-height: 20px; color: #1e293b;">
+          <div style="font-size: 14px; line-height: 20px; color: #000000;">
             ${addressLines.map((l) => `<div>${l}</div>`).join('')}
           </div>
           <div style="font-size: 14px; font-weight: 700; margin-top: 6px;">
@@ -1258,8 +1256,12 @@ function renderPrnLabelHtml(form) {
           margin-right: ${hasSecond ? '100px' : '0px'};
           font-size: 15px;
           font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 6px;
         ">
-          ORDER ID: ${form?.notes || '-'}
+          ${iconFileText}
+          <span>ORDER ID: ${form?.notes || '-'}</span>
         </div>
 
         <div style="
@@ -1270,14 +1272,14 @@ function renderPrnLabelHtml(form) {
           padding-right: ${hasSecond ? '100px' : '0px'};
         ">
           <div>
-            <div style="font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 2px;">BARCODE TRACKING</div>
+            <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #000000; margin-bottom: 2px;">
+              ${iconBarcode}
+              <span>BARCODE TRACKING</span>
+            </div>
             ${primaryBarcodeSvg}
             <div style="font-size: 20px; font-weight: 900; font-family: monospace; letter-spacing: 0.08em; color: #000000; margin-top: 4px;">
               ${form?.tracking_id || '-'}
             </div>
-          </div>
-          <div style="font-size: 20px; font-weight: 900; letter-spacing: 0.05em;">
-            (DEL/MUD)
           </div>
         </div>
       </div>

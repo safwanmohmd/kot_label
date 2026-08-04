@@ -18,6 +18,7 @@ import {
   FileSpreadsheet,
   PackageCheck, // Added for Return Verification icon
   ListFilter,    // Added for Tracking Sorter icon
+  FolderSymlink  // Added for GDrive Vault icon
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -48,6 +49,7 @@ const NAV_GROUPS = [
     groupLabel: 'Directory Tools',
     items: [
       { to: '/vendors', label: 'Vendor Directory', icon: Users },
+      { to: '/gdrive', label: 'GDrive Vault', icon: FolderSymlink },          // ADDED GDRIVE ROUTE
       { to: '/lossgen', label: 'Loss Log Email Gen', icon: MailPlus },
     ]
   },

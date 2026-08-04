@@ -16,6 +16,7 @@ import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
 import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
 import { WishmasterReturnVerification } from './pages/ReturnVerification.jsx';
 import { TrackingSorter } from './pages/TrackingSorter.jsx';
+import { DriveLinksManager } from './pages/DriveLinksManager.jsx';
 
 function App() {
   return (
@@ -38,6 +39,7 @@ function App() {
             <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
             <Route path="/verifytid" element={<WishmasterReturnVerification />} />
             <Route path="/sort" element={<TrackingSorter />} />
+            <Route path="/gdrive" element={<DriveLinksManager />} />
           </Routes>
         </AppShell>
       </BrowserRouter>
