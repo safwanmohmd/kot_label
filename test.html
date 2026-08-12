@@ -2,67 +2,279 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Shipments Reco Test Dashboard</title>
+  <title>ERP Shipment Reconciliation Dashboard (Test)</title>
   <style>
-    body { font-family: sans-serif; padding: 40px; background: #f4f6f8; }
-    .card { background: white; padding: 24px; border-radius: 8px; max-width: 500px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    input { width: 100%; padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
-    .log { margin-top: 20px; background: #1e293b; color: #38bdf8; padding: 15px; border-radius: 6px; font-family: monospace; height: 180px; overflow-y: auto; }
+    :root {
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --border-color: #dfe1e6;
+      --text-muted: #5e6c84;
+      --text-dark: #000000;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 20px;
+      background-color: var(--bg-color);
+      color: #333;
+    }
+
+    .header {
+      background: #0071dc;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      position: relative;
+    }
+
+    .scan-box {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    input[type="text"] {
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 250px;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: #0071dc;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .btn-rto { background: #eab308; color: black; }
+    .btn-normal { background: #22c55e; color: white; }
+
+    /* Screen Refresh Loading Overlay */
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 16px;
+      color: #0071dc;
+      border-radius: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.05s ease-in-out;
+      z-index: 10;
+    }
+
+    .loading-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Exact ERP Styled-Components Classes */
+    .sc-AykKC.haZMLB {
+      display: flex;
+      flex-wrap: wrap;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 15px;
+    }
+
+    .sc-AykKC.fmcvyS {
+      width: 25%;
+      min-width: 140px;
+      padding: 12px 8px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sc-AykKE.jtoCe {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .sc-AykKE.fhPspo {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+
+    .sc-AykKE.hkQxza {
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h2>Pending Shipment Reconciliation</h2>
-  <label>Scan Shipment:</label>
-  <input type="text" id="scan-input" placeholder="Click here before starting test..." />
+  <div class="header">
+    <h2>Pending Shipment Reconciliation</h2>
+  </div>
 
-  <h3>Scan Log:</h3>
-  <div id="log" class="log">Waiting for scans...</div>
-</div>
+  <div class="card">
+    <!-- Screen Loading / Refresh Overlay -->
+    <div id="loading-overlay" class="loading-overlay">⚡ Reconciling Shipment Data...</div>
 
-<script>
-  const input = document.getElementById('scan-input');
-  const log = document.getElementById('log');
-  let keyTimes = [];
+    <div class="scan-box">
+      <label for="scan-input"><strong>Scan Shipment:</strong></label>
+      <input type="text" id="scan-input" placeholder="Scan or Type Tracking ID..." autofocus />
+      <button class="btn-rto" onclick="triggerScanSimulation(true)">Simulate RTO Scan (IS RTO Yes)</button>
+      <button class="btn-normal" onclick="triggerScanSimulation(false)">Simulate Normal Scan (IS RTO No)</button>
+    </div>
 
-  // Detect typing speed (Simulating Ekart's Anti-Manual Entry detection)
-  input.addEventListener('keydown', (e) => {
-    keyTimes.push(performance.now());
-  });
+    <h3>Last Scanned Shipment Details</h3>
 
-  input.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') {
-      const val = input.value.trim();
-      if (!val) return;
+    <!-- Dynamic ERP Container -->
+    <div id="erp-data-container">
+      <div display="flex" class="sc-AykKC haZMLB" style="flex-wrap: wrap;">
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Tracking ID</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE iTPsUP" id="tracking-id">FMPCXXXXXXXXXX</span></span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">CPD</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE iTPsUP">2026-08-07</span></span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">RFR</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi" id="rto-status">No</span></span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is Prexo</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">No</span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Item Type</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">closet_drawer_divider</span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Priority</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" font-weight="600" class="sc-AykKE hkQxza">P2</span></span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO CV</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi">No</span></span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Bin ID</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+        </div>
+        <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+          <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Cluster ID</span>
+          <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
-      // Calculate average time between keystrokes
-      let isScanner = false;
-      if (keyTimes.length > 3) {
-        let totalDiff = 0;
-        for (let i = 1; i < keyTimes.length; i++) {
-          totalDiff += (keyTimes[i] - keyTimes[i-1]);
-        }
-        const avgSpeed = totalDiff / keyTimes.length;
-        
-        // Physical scanners type faster than 30ms per character
-        if (avgSpeed < 30) {
-          isScanner = true;
-        }
-      }
+  <script>
+    const overlay = document.getElementById('loading-overlay');
+    const container = document.getElementById('erp-data-container');
+    const input = document.getElementById('scan-input');
 
-      if (isScanner) {
-        log.innerHTML += `<div style="color:#4ade80;">✅ SUCCESS (Scanner Detected): ${val}</div>`;
-      } else {
-        log.innerHTML += `<div style="color:#f87171;">⚠️ WARNING: Please scan shipment label, manual input not allowed! (${val})</div>`;
-      }
+    function triggerScanSimulation(isRTO, customId) {
+      const trackingId = customId || ('FMPC' + Math.floor(1000000000 + Math.random() * 9000000000));
+      
+      // 1. Trigger Screen Blink/Refresh Loading Overlay
+      overlay.classList.add('active');
+      container.innerHTML = ''; // Wipe DOM temporarily like an ERP page refresh
 
-      keyTimes = [];
-      input.value = '';
-      log.scrollTop = log.scrollHeight;
+      // 2. Render refreshed ERP DOM structure after 1 second
+      setTimeout(() => {
+        overlay.classList.remove('active');
+
+        container.innerHTML = `
+          <div display="flex" class="sc-AykKC haZMLB" style="flex-wrap: wrap;">
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Tracking ID</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE iTPsUP">${trackingId}</span></span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">CPD</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE iTPsUP">2026-08-07</span></span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">RFR</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi">${isRTO ? 'Yes' : 'No'}</span></span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is Prexo</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">No</span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Item Type</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">closet_drawer_divider</span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Priority</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" font-weight="600" class="sc-AykKE hkQxza">P2</span></span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO CV</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi">No</span></span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Bin ID</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+            </div>
+            <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
+              <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Cluster ID</span>
+              <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+            </div>
+          </div>
+        `;
+      }, 1000); // 1-second delay
     }
-  });
-</script>
+
+    // Trigger simulation on Enter press
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = input.value.trim();
+        if (!val) return;
+        triggerScanSimulation(val.toLowerCase().includes('rto'), val);
+        input.value = '';
+      }
+    });
+  </script>
 
 </body>
 </html>
