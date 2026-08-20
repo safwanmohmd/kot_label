@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase';
 import { useToast } from '../lib/useToast';
 
-// Master deletion / edit passcode set to admin123
+// Master passcode set to admin123 (or configurable via VITE_DELETE_PASSWORD)
 const MASTER_DELETE_PASSWORD = import.meta.env.VITE_DELETE_PASSWORD || 'admin123';
 
 export default function BagSessionManager() {
@@ -47,13 +47,16 @@ export default function BagSessionManager() {
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [mailSessionTarget, setMailSessionTarget] = useState(null);
 
-  // Password Confirmation Modal State
-  const [authModalState, setAuthModalState] = useState({
+  // Reusable Confirmation & Password Auth Modal State
+  const [confirmModalState, setConfirmModalState] = useState({
     isOpen: false,
     title: '',
     description: '',
+    isPasswordRequired: false,
     passwordInput: '',
     error: '',
+    confirmButtonText: 'Confirm',
+    confirmButtonColor: 'bg-red-600 hover:bg-red-700',
     onConfirm: null,
   });
 
@@ -102,7 +105,29 @@ export default function BagSessionManager() {
     }));
   };
 
-  // Helper: Execute action with conditional password check (only requires password if session is CLOSED)
+  // Helper: Trigger Confirmation or Password Modal
+  const openConfirmModal = ({
+    title,
+    description,
+    isPasswordRequired = false,
+    confirmButtonText = 'Confirm',
+    confirmButtonColor = 'bg-red-600 hover:bg-red-700',
+    onConfirm,
+  }) => {
+    setConfirmModalState({
+      isOpen: true,
+      title,
+      description,
+      isPasswordRequired,
+      passwordInput: '',
+      error: '',
+      confirmButtonText,
+      confirmButtonColor,
+      onConfirm,
+    });
+  };
+
+  // Helper: Execute action checking if session is closed
   const requireAuthIfClosed = (sessionObj, title, description, actionCallback) => {
     const isClosed = sessionObj?.status === 'completed' || sessionObj?.status === 'closed';
     if (!isClosed) {
@@ -110,34 +135,38 @@ export default function BagSessionManager() {
       return;
     }
 
-    setAuthModalState({
-      isOpen: true,
+    openConfirmModal({
       title: title || 'Authorized Closed-Session Edit',
       description: description || 'This session is marked as CLOSED. Enter master passcode to proceed with changes.',
-      passwordInput: '',
-      error: '',
+      isPasswordRequired: true,
+      confirmButtonText: 'Authorize',
+      confirmButtonColor: 'bg-indigo-600 hover:bg-indigo-700',
       onConfirm: actionCallback,
     });
   };
 
-  const handleVerifyAuthPassword = async () => {
-    if (!authModalState.passwordInput) {
-      setAuthModalState((prev) => ({ ...prev, error: 'Please enter the authorization passcode.' }));
-      return;
+  const handleModalSubmit = async () => {
+    if (confirmModalState.isPasswordRequired) {
+      if (!confirmModalState.passwordInput) {
+        setConfirmModalState((prev) => ({ ...prev, error: 'Please enter the authorization passcode.' }));
+        return;
+      }
+      if (confirmModalState.passwordInput !== MASTER_DELETE_PASSWORD) {
+        setConfirmModalState((prev) => ({ ...prev, error: 'Incorrect passcode! Access denied.' }));
+        return;
+      }
     }
 
-    if (authModalState.passwordInput !== MASTER_DELETE_PASSWORD) {
-      setAuthModalState((prev) => ({ ...prev, error: 'Incorrect passcode! Access denied.' }));
-      return;
-    }
-
-    const action = authModalState.onConfirm;
-    setAuthModalState({
+    const action = confirmModalState.onConfirm;
+    setConfirmModalState({
       isOpen: false,
       title: '',
       description: '',
+      isPasswordRequired: false,
       passwordInput: '',
       error: '',
+      confirmButtonText: 'Confirm',
+      confirmButtonColor: 'bg-red-600 hover:bg-red-700',
       onConfirm: null,
     });
 
@@ -167,7 +196,7 @@ export default function BagSessionManager() {
     return Object.values(map);
   };
 
-  // 1. Fetch Sessions (Decoupled from direct active selections to prevent stale closure data wipe)
+  // 1. Fetch Sessions
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
@@ -229,11 +258,9 @@ export default function BagSessionManager() {
 
       setSessions(formatted);
 
-      // Dynamically sync active inspection details without triggering full-state drops
       setSessionDetails((prevSession) => {
         if (!prevSession) return null;
-        const matched = formatted.find((s) => s.id === prevSession.id);
-        return matched || null;
+        return formatted.find((s) => s.id === prevSession.id) || null;
       });
 
       setSelectedBgGroup((prevGroup) => {
@@ -372,33 +399,53 @@ export default function BagSessionManager() {
     }
   };
 
-  // 4. Toggle Session Status (Close / Reopen)
+  // 4. Toggle Session Status (Close directly / Reopen with Password Confirmation)
   const handleToggleSessionStatus = async (sessionId, currentStatus) => {
-    const nextStatus = currentStatus === 'completed' || currentStatus === 'closed' ? 'open' : 'completed';
-    const actionLabel = nextStatus === 'completed' ? 'close' : 'reopen';
+    const isClosed = currentStatus === 'completed' || currentStatus === 'closed';
 
-    if (!window.confirm(`Are you sure you want to ${actionLabel} this session?`)) return;
+    const executeToggle = async () => {
+      const nextStatus = isClosed ? 'open' : 'completed';
+      try {
+        const { error } = await supabase
+          .from('bag_sessions')
+          .update({ status: nextStatus, updated_at: new Date().toISOString() })
+          .eq('id', sessionId);
 
-    try {
-      const { error } = await supabase
-        .from('bag_sessions')
-        .update({ status: nextStatus, updated_at: new Date().toISOString() })
-        .eq('id', sessionId);
+        if (error) throw error;
 
-      if (error) throw error;
+        showToast(`Session marked as ${nextStatus === 'open' ? 'reopened' : 'closed'}!`, 'success');
+        await fetchSessions();
 
-      showToast(`Session marked as ${nextStatus}!`, 'success');
-      await fetchSessions();
-
-      if (nextStatus === 'completed') {
-        const found = sessions.find((s) => s.id === sessionId);
-        if (found) {
-          setMailSessionTarget(found);
-          setIsMailModalOpen(true);
+        if (nextStatus === 'completed') {
+          const found = sessions.find((s) => s.id === sessionId);
+          if (found) {
+            setMailSessionTarget(found);
+            setIsMailModalOpen(true);
+          }
         }
+      } catch (err) {
+        showToast(err.message || 'Failed to update session status', 'error');
       }
-    } catch (err) {
-      showToast(err.message || 'Failed to update session status', 'error');
+    };
+
+    if (isClosed) {
+      openConfirmModal({
+        title: 'Authorize Session Reopen',
+        description: 'This session is currently CLOSED. Enter master passcode to reopen it.',
+        isPasswordRequired: true,
+        confirmButtonText: 'Reopen Session',
+        confirmButtonColor: 'bg-emerald-600 hover:bg-emerald-700',
+        onConfirm: executeToggle,
+      });
+    } else {
+      openConfirmModal({
+        title: 'Close Session',
+        description: 'Are you sure you want to close this session and finalize all bagged dispatches?',
+        isPasswordRequired: false,
+        confirmButtonText: 'Close Session',
+        confirmButtonColor: 'bg-amber-600 hover:bg-amber-700',
+        onConfirm: executeToggle,
+      });
     }
   };
 
@@ -595,7 +642,7 @@ export default function BagSessionManager() {
     );
   };
 
-  // 7. Delete Handlers with Fixed Optimistic State Filter
+  // 7. Delete Handlers with Custom Confirmation Modal & State Preservation
   const handleDeleteSessionPrompt = (sessionId, sessionTitle) => {
     const performDelete = async () => {
       try {
@@ -604,7 +651,7 @@ export default function BagSessionManager() {
 
         showToast('Session removed successfully', 'success');
 
-        // Optimistically update sessions list so UI never requires a hard reload
+        // Optimistically remove session from local list so UI never blanks out
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
 
         if (selectedSessionId === sessionId) {
@@ -617,17 +664,19 @@ export default function BagSessionManager() {
       }
     };
 
-    setAuthModalState({
-      isOpen: true,
+    openConfirmModal({
       title: 'Delete Session',
-      description: `Permanently delete session "${sessionTitle}" and all its bags?`,
-      passwordInput: '',
-      error: '',
+      description: `Are you sure you want to permanently delete session "${sessionTitle}" and all its bags?`,
+      isPasswordRequired: true,
+      confirmButtonText: 'Delete Session',
+      confirmButtonColor: 'bg-red-600 hover:bg-red-700',
       onConfirm: performDelete,
     });
   };
 
   const handleDeleteBgGroupPrompt = (bgTrackingId) => {
+    const isClosed = sessionDetails?.status === 'completed' || sessionDetails?.status === 'closed';
+
     const performDeleteBg = async () => {
       try {
         const { error } = await supabase
@@ -639,6 +688,18 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast(`BG Tracking ID ${bgTrackingId} deleted`, 'success');
+
+        // Optimistically update sessionDetails state
+        setSessionDetails((prev) => {
+          if (!prev) return null;
+          const updatedBgGroups = (prev.bgGroups || []).filter((g) => g.bg_tracking_id !== bgTrackingId);
+          return {
+            ...prev,
+            bgGroups: updatedBgGroups,
+            totalUniqueBgs: updatedBgGroups.length,
+          };
+        });
+
         if (selectedBgGroup?.bg_tracking_id === bgTrackingId) setSelectedBgGroup(null);
         await fetchSessions();
       } catch (err) {
@@ -646,33 +707,49 @@ export default function BagSessionManager() {
       }
     };
 
-    requireAuthIfClosed(
-      sessionDetails,
-      'Authorize BG Group Deletion',
-      `Session is CLOSED. Enter passcode to delete BG "${bgTrackingId}".`,
-      performDeleteBg
-    );
+    openConfirmModal({
+      title: 'Delete BG Tracking ID',
+      description: `Are you sure you want to delete BG Tracking ID "${bgTrackingId}" and all its recorded shipments?`,
+      isPasswordRequired: isClosed,
+      confirmButtonText: 'Delete BG Group',
+      confirmButtonColor: 'bg-red-600 hover:bg-red-700',
+      onConfirm: performDeleteBg,
+    });
   };
 
   const handleDeleteTrackingItemPrompt = (itemId, trackingId) => {
+    const isClosed = sessionDetails?.status === 'completed' || sessionDetails?.status === 'closed';
+
     const performDeleteItem = async () => {
       try {
         const { error } = await supabase.from('bagged_items').delete().eq('id', itemId);
         if (error) throw error;
 
         showToast('Tracking ID removed', 'success');
+
+        // Optimistically update selected BG group modal view
+        setSelectedBgGroup((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            items: (prev.items || []).filter((i) => i.id !== itemId),
+          };
+        });
+
         await fetchSessions();
       } catch (err) {
         showToast(err.message || 'Failed to delete item', 'error');
       }
     };
 
-    requireAuthIfClosed(
-      sessionDetails,
-      'Authorize Shipment Deletion',
-      `Session is CLOSED. Enter passcode to delete shipment "${trackingId}".`,
-      performDeleteItem
-    );
+    openConfirmModal({
+      title: 'Delete Tracking ID',
+      description: `Are you sure you want to remove shipment "${trackingId}" from this bag?`,
+      isPasswordRequired: isClosed,
+      confirmButtonText: 'Remove Item',
+      confirmButtonColor: 'bg-red-600 hover:bg-red-700',
+      onConfirm: performDeleteItem,
+    });
   };
 
   // 8. Global Search
@@ -889,7 +966,6 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
-          {/* Enhanced Multi-Metric Dashboard Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
@@ -923,7 +999,6 @@ export default function BagSessionManager() {
             </div>
           </div>
 
-          {/* Filter Bar with Quick Status Pills */}
           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-2 items-center">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <input
@@ -936,7 +1011,6 @@ export default function BagSessionManager() {
                 className="text-[11px] border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-indigo-500"
               />
 
-              {/* Quick Status Filter Pills */}
               <div className="flex bg-gray-100 p-0.5 rounded border border-gray-200">
                 <button
                   onClick={() => {
@@ -1003,7 +1077,6 @@ export default function BagSessionManager() {
             </div>
           </div>
 
-          {/* Sessions List - Closed Sessions have reduced opacity */}
           <div className="space-y-3">
             {loading ? (
               <div className="p-8 text-center text-xs text-gray-400 bg-white rounded-lg border">
@@ -1218,7 +1291,6 @@ export default function BagSessionManager() {
                   : 'bg-white border-gray-200'
               }`}
             >
-              {/* Active Session Info & Operational Controls Bar */}
               <div className="p-3.5 bg-gray-50 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1287,7 +1359,6 @@ export default function BagSessionManager() {
                 </div>
               </div>
 
-              {/* Workspace Bags Filter Bar */}
               <div className="p-2.5 bg-white border-b flex justify-between items-center gap-2">
                 <span className="text-xs font-bold text-gray-800">
                   Assigned Bags ({filteredWorkspaceBgs.length})
@@ -1314,7 +1385,6 @@ export default function BagSessionManager() {
                 </div>
               </div>
 
-              {/* BG Tracking Rows */}
               {filteredWorkspaceBgs.length === 0 ? (
                 <div className="p-12 text-center text-xs text-gray-400 space-y-2">
                   <p>No BG Tracking IDs found in this session workspace.</p>
@@ -2092,71 +2162,76 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* MODAL 5: PASSWORD CONFIRMATION MODAL */}
-      {authModalState.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 space-y-3">
+      {/* REUSABLE CUSTOM CONFIRMATION & AUTHENTICATION MODAL (ON EVERY DELETE & REOPEN) */}
+      {confirmModalState.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-2 border-b pb-2 text-rose-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <h3 className="font-bold text-gray-900 text-sm">{authModalState.title}</h3>
+              <h3 className="font-bold text-gray-900 text-sm">{confirmModalState.title}</h3>
             </div>
 
-            <p className="text-xs text-gray-600">{authModalState.description}</p>
+            <p className="text-xs text-gray-600">{confirmModalState.description}</p>
 
-            <div>
-              <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                Enter Master Passcode:
-              </label>
-              <input
-                type="password"
-                placeholder="Passcode..."
-                value={authModalState.passwordInput}
-                onChange={(e) =>
-                  setAuthModalState((prev) => ({
-                    ...prev,
-                    passwordInput: e.target.value,
-                    error: '',
-                  }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleVerifyAuthPassword();
+            {confirmModalState.isPasswordRequired && (
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  Enter Master Passcode:
+                </label>
+                <input
+                  type="password"
+                  placeholder="Passcode..."
+                  value={confirmModalState.passwordInput}
+                  onChange={(e) =>
+                    setConfirmModalState((prev) => ({
+                      ...prev,
+                      passwordInput: e.target.value,
+                      error: '',
+                    }))
                   }
-                }}
-                className="w-full border border-gray-300 rounded p-1.5 text-xs focus:outline-none focus:border-rose-500"
-                autoFocus
-              />
-              {authModalState.error && (
-                <p className="text-[10px] text-red-600 mt-1 font-semibold">{authModalState.error}</p>
-              )}
-            </div>
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleModalSubmit();
+                    }
+                  }}
+                  className="w-full border border-gray-300 rounded p-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                  autoFocus
+                />
+                {confirmModalState.error && (
+                  <p className="text-[10px] text-red-600 mt-1 font-semibold">{confirmModalState.error}</p>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-1.5 pt-2 border-t">
               <button
                 type="button"
                 onClick={() =>
-                  setAuthModalState({
+                  setConfirmModalState({
                     isOpen: false,
                     title: '',
                     description: '',
+                    isPasswordRequired: false,
                     passwordInput: '',
                     error: '',
+                    confirmButtonText: 'Confirm',
+                    confirmButtonColor: 'bg-red-600 hover:bg-red-700',
                     onConfirm: null,
                   })
                 }
-                className="px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded"
+                className="px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleVerifyAuthPassword}
-                className="px-4 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded shadow-xs"
+                onClick={handleModalSubmit}
+                className={`px-4 py-1.5 text-white text-xs font-bold rounded-lg shadow-xs transition ${confirmModalState.confirmButtonColor}`}
               >
-                Authorize
+                {confirmModalState.confirmButtonText}
               </button>
             </div>
           </div>
