@@ -17,6 +17,8 @@ import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
 import { WishmasterReturnVerification } from './pages/ReturnVerification.jsx';
 import { TrackingSorter } from './pages/TrackingSorter.jsx';
 import { DriveLinksManager } from './pages/DriveLinksManager.jsx';
+import BagSessionManager from './pages/BagSessionManager.jsx';
+import BulkTrackingSearch from './pages/BulkTrackingSearch.jsx';
 
 function App() {
   return (
@@ -40,6 +42,8 @@ function App() {
             <Route path="/verifytid" element={<WishmasterReturnVerification />} />
             <Route path="/sort" element={<TrackingSorter />} />
             <Route path="/gdrive" element={<DriveLinksManager />} />
+            <Route path="/bags" element={<BagSessionManager />} />
+            <Route path="/search" element={<BulkTrackingSearch />} />
           </Routes>
         </AppShell>
       </BrowserRouter>

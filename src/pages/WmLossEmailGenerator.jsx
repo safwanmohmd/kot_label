@@ -13,16 +13,29 @@ import {
   FilePlus,
   FolderHeart,
   EyeOff,
-  X
+  X,
+  CheckCircle,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { fetchVendors } from '../lib/vendorService.js';
+import { supabase } from '../lib/supabase.js';
+import { createLpRecord, updateLpRecord, fetchLpRecords } from '../lib/lpService.js';
 
 export function WmLossEmailGenerator() {
   const toast = useToast();
   const [vendors, setVendors] = useState([]);
   const [loadingVendors, setLoadingVendors] = useState(true);
+  const [isSavingDb, setIsSavingDb] = useState(false);
   
+  // Replace Confirmation Modal State
+  const [duplicateWarningModal, setDuplicateWarningModal] = useState({
+    isOpen: false,
+    duplicates: [],
+    pendingValidRows: []
+  });
+
   // Toggle Visibility for the Preset Editor Configuration Tab Panel
   const [showPresetTab, setShowPresetTab] = useState(false);
 
@@ -117,21 +130,18 @@ export function WmLossEmailGenerator() {
     getVendors();
   }, []);
 
-  // Updates specific label strings inside customized grid mapping
   const handleColumnLabelChange = (index, newLabel) => {
     const updated = [...customColumns];
     updated[index].label = newLabel.toUpperCase();
     setCustomColumns(updated);
   };
 
-  // Toggles visibility controls for selected table keys
   const handleColumnVisibilityToggle = (index) => {
     const updated = [...customColumns];
     updated[index].visible = !updated[index].visible;
     setCustomColumns(updated);
   };
 
-  // Overwrites dynamic preset configuration context parameters
   const handleSavePreset = () => {
     const updatedPresets = {
       ...presets,
@@ -220,7 +230,6 @@ export function WmLossEmailGenerator() {
     let htmlTableContent = '';
     
     if (includeTableInMail) {
-      // Dynamic Data Rows Generation - Strict Uppercase and Font Matching
       const dataRowsHtml = rows.map(row => `
         <tr style="height: 22px;">
           ${visibleColumns.map(col => {
@@ -231,7 +240,6 @@ export function WmLossEmailGenerator() {
         </tr>
       `).join('');
 
-      // SPREADSHEET LAYOUT STRUCTURE Engine (No blank placeholders embedded anymore)
       htmlTableContent = `
         <table style="border-collapse: collapse; text-align: center; margin-top: 16px; width: 100%; max-width: 850px; border: 1px solid #000000;">
           <thead>
@@ -266,6 +274,178 @@ export function WmLossEmailGenerator() {
     }).catch(() => {
       toast('Failed exporting mail payload structure.', 'error');
     });
+  };
+
+  // Perform database write and upsert operations
+  const executeDatabaseSave = async (validRows) => {
+    setIsSavingDb(true);
+    try {
+      const timestamp = new Date().toISOString();
+      const dateStr = timestamp.split('T')[0];
+
+      // 1. Commit / Update LP Tracker
+      let existingLp = [];
+      try {
+        if (typeof fetchLpRecords === 'function') {
+          existingLp = await fetchLpRecords();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+
+      for (const row of validRows) {
+        const cleanTid = row.trackingId.trim().toUpperCase();
+        const foundRec = existingLp.find(
+          r => (r.tracking_id || '').toUpperCase() === cleanTid
+        );
+
+        if (foundRec && typeof updateLpRecord === 'function') {
+          await updateLpRecord(foundRec.id, {
+            wishmaster_name: row.wm_name?.trim() || foundRec.wishmaster_name || 'Vendor Courier',
+            status: 'LOSS',
+            priority: 'CRITICAL',
+            details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
+            resolved_at: timestamp
+          });
+        } else if (typeof createLpRecord === 'function') {
+          await createLpRecord({
+            tracking_id: cleanTid,
+            wishmaster_name: row.wm_name?.trim() || 'Vendor Courier',
+            aging_days: 1,
+            priority: 'CRITICAL',
+            status: 'LOSS',
+            details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
+            resolved_at: timestamp
+          });
+        }
+      }
+
+      // 2. Upsert into wm_loss_records
+      for (const row of validRows) {
+        const cleanTid = row.trackingId.trim().toUpperCase();
+        await supabase
+          .from('wm_loss_records')
+          .delete()
+          .ilike('tracking_id', cleanTid);
+      }
+
+      const lossRecordsPayload = validRows.map(row => ({
+        tracking_id: row.trackingId.trim().toUpperCase(),
+        wm_name: row.wm_name?.trim() || 'Wishmaster',
+        vendor: row.vendor_id?.trim() || 'Vendor',
+        reason: subjectText || 'Wishmaster Loss Log',
+        date: dateStr,
+        status: 'LOSS',
+        created_at: timestamp
+      }));
+
+      try {
+        await supabase.from('wm_loss_records').insert(lossRecordsPayload);
+      } catch (errDb) {
+        console.warn('wm_loss_records write notice:', errDb);
+      }
+
+      // 3. Log batch entry into wm_loss_emails
+      try {
+        const trackingList = validRows.map(r => r.trackingId.trim().toUpperCase());
+        await supabase.from('wm_loss_emails').insert([
+          {
+            mail_date: dateStr,
+            vendor: validRows[0]?.vendor_id || 'Vendor',
+            wm_name: validRows[0]?.wm_name || 'Wishmaster',
+            reason: subjectText || 'Wishmaster Loss Log',
+            tracking_ids: trackingList.join('\n'),
+            items_count: trackingList.length,
+            created_at: timestamp
+          }
+        ]);
+      } catch (errEmailDb) {
+        console.warn('wm_loss_emails write notice:', errEmailDb);
+      }
+
+      toast(`Successfully saved and confirmed ${validRows.length} loss record(s) into database!`, 'success');
+      setDuplicateWarningModal({ isOpen: false, duplicates: [], pendingValidRows: [] });
+    } catch (err) {
+      console.error('Save to DB error:', err);
+      toast('Failed to save records into database.', 'error');
+    } finally {
+      setIsSavingDb(false);
+    }
+  };
+
+  // Check for existing duplicates before writing to database
+  const handleSaveAndConfirmToDb = async () => {
+    const validRows = rows.filter(r => r.trackingId?.trim() !== '');
+    if (validRows.length === 0) {
+      toast('Please enter at least one valid tracking ID.', 'error');
+      return;
+    }
+
+    setIsSavingDb(true);
+    try {
+      const incomingTids = validRows.map(r => r.trackingId.trim().toUpperCase());
+
+      // 1. Check in LP Tracker records
+      let existingLp = [];
+      try {
+        if (typeof fetchLpRecords === 'function') {
+          existingLp = await fetchLpRecords();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+
+      // 2. Check in wm_loss_records
+      let existingLossRecords = [];
+      try {
+        const { data } = await supabase
+          .from('wm_loss_records')
+          .select('*')
+          .in('tracking_id', incomingTids);
+        if (data) existingLossRecords = data;
+      } catch (e) {
+        console.warn(e);
+      }
+
+      const duplicateList = [];
+
+      validRows.forEach(row => {
+        const cleanTid = row.trackingId.trim().toUpperCase();
+        const lpMatch = existingLp.find(
+          r => (r.tracking_id || '').toUpperCase() === cleanTid && (r.status || '').toUpperCase() === 'LOSS'
+        );
+        const wmMatch = existingLossRecords.find(
+          r => (r.tracking_id || '').toUpperCase() === cleanTid
+        );
+
+        if (lpMatch || wmMatch) {
+          const oldWmName = lpMatch?.wishmaster_name || wmMatch?.wm_name || 'Another Wishmaster';
+          duplicateList.push({
+            trackingId: cleanTid,
+            oldWmName,
+            newWmName: row.wm_name || 'New Wishmaster'
+          });
+        }
+      });
+
+      // If duplicate records are detected, trigger confirmation modal
+      if (duplicateList.length > 0) {
+        setDuplicateWarningModal({
+          isOpen: true,
+          duplicates: duplicateList,
+          pendingValidRows: validRows
+        });
+        setIsSavingDb(false);
+        return;
+      }
+
+      // If no duplicates exist, execute standard write
+      await executeDatabaseSave(validRows);
+    } catch (err) {
+      console.error(err);
+      toast('Error checking existing tracking records.', 'error');
+      setIsSavingDb(false);
+    }
   };
 
   return (
@@ -462,6 +642,22 @@ export function WmLossEmailGenerator() {
                 >
                   <Plus className="h-3 w-3" /> Add Item Row
                 </button>
+                
+                {/* SAVE & CONFIRM TO DB BUTTON */}
+                <button 
+                  onClick={handleSaveAndConfirmToDb}
+                  disabled={isSavingDb}
+                  className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded transition-colors shadow-2xs disabled:opacity-50"
+                  title="Store all row tracking IDs directly into the Loss Database"
+                >
+                  {isSavingDb ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3 w-3" />
+                  )}
+                  Save & Confirm to DB
+                </button>
+
                 <button 
                   onClick={handleCopyToClipboard}
                   className="flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white font-bold text-[10px] rounded hover:bg-emerald-700 transition-colors shadow-2xs"
@@ -639,6 +835,56 @@ export function WmLossEmailGenerator() {
         </div>
 
       </div>
+
+      {/* DUPLICATE OVERRIDE CONFIRMATION MODAL */}
+      {duplicateWarningModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center gap-2 border-b pb-2.5 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="font-bold text-sm text-gray-900">Existing Loss Record Detected</h3>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">
+                The following Tracking ID(s) are already marked as <strong>LOSS</strong> under another Wishmaster:
+              </p>
+
+              <div className="max-h-40 overflow-y-auto space-y-1.5 bg-amber-50/60 p-2.5 rounded-lg border border-amber-200">
+                {duplicateWarningModal.duplicates.map((dup, i) => (
+                  <div key={i} className="text-xs font-mono flex flex-col gap-0.5 border-b border-amber-200/60 pb-1 last:border-none">
+                    <span className="font-bold text-indigo-700">{dup.trackingId}</span>
+                    <span className="text-[11px] text-gray-700 font-sans">
+                      Currently assigned: <b className="text-rose-700">{dup.oldWmName}</b> ➔ Replace with: <b className="text-emerald-700">{dup.newWmName}</b>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs font-bold text-gray-800 pt-1">
+                Do you want to replace and update these record(s) with the new Wishmaster details?
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setDuplicateWarningModal({ isOpen: false, duplicates: [], pendingValidRows: [] })}
+                className="px-3.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDatabaseSave(duplicateWarningModal.pendingValidRows)}
+                className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs"
+              >
+                Yes, Replace & Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

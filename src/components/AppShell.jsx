@@ -16,9 +16,11 @@ import {
   X,
   FileCode,
   FileSpreadsheet,
-  PackageCheck, // Added for Return Verification icon
-  ListFilter,    // Added for Tracking Sorter icon
-  FolderSymlink  // Added for GDrive Vault icon
+  PackageCheck,
+  ListFilter,
+  FolderSymlink,
+  Search,       // Added for TID Search & Audit
+  Luggage       // Added for Bag Dispatch Hub
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -37,9 +39,11 @@ const NAV_GROUPS = [
   {
     groupLabel: 'Tracking & Inspection',
     items: [
+      { to: '/bags', label: 'Bag Dispatch Hub', icon: Luggage },          // Added /bags route
+      { to: '/search', label: 'Shipment Auditor', icon: Search },         // Added /search route
       { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet },
-      { to: '/verifytid', label: 'Return Verification', icon: PackageCheck }, // ADDED RETURN VERIFICATION
-      { to: '/sort', label: 'Tracking Sorter', icon: ListFilter },           // ADDED TRACKING SORTER
+      { to: '/verifytid', label: 'Return Verification', icon: PackageCheck },
+      { to: '/sort', label: 'Tracking Sorter', icon: ListFilter },
       { to: '/unmask', label: 'Unmask Deck', icon: Eye },
       { to: '/lp', label: 'Lp Tracker', icon: ShieldAlert },
       { to: '/manualdelivery', label: 'Manual Delivery', icon: Truck },
@@ -49,7 +53,7 @@ const NAV_GROUPS = [
     groupLabel: 'Directory Tools',
     items: [
       { to: '/vendors', label: 'Vendor Directory', icon: Users },
-      { to: '/gdrive', label: 'GDrive Vault', icon: FolderSymlink },          // ADDED GDRIVE ROUTE
+      { to: '/gdrive', label: 'GDrive Vault', icon: FolderSymlink },
       { to: '/lossgen', label: 'Loss Log Email Gen', icon: MailPlus },
     ]
   },
@@ -124,7 +128,7 @@ export function AppShell({ children }) {
               System online
             </div>
             
-            {/* ACTIVE ACTION HUB REDIRECT BUTTON / ROUTER CONTROL LINKS */}
+            {/* ACTIVE ACTION HUB REDIRECT BUTTON */}
             <NavLink 
               to="/settings"
               className={({ isActive }) => 
@@ -161,11 +165,10 @@ function SidebarContent({ onNavigate }) {
         </div>
       </div>
 
-      {/* SCROLLABLE CATEGORIZED SIDE NAVIGATION CONTROLLER (COMPACT LAYOUT) */}
+      {/* SCROLLABLE CATEGORIZED SIDE NAVIGATION */}
       <nav className="flex-1 py-3 px-2.5 space-y-3.5 overflow-y-auto">
         {NAV_GROUPS.map((group) => (
           <div key={group.groupLabel} className="space-y-0.5">
-            {/* SUB-CATEGORY DESCRIPTIONS SEPARATORS */}
             <h3 className="px-2.5 text-[9px] font-bold text-ink-500 uppercase tracking-widest mb-1">
               {group.groupLabel}
             </h3>
