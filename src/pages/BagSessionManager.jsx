@@ -106,12 +106,10 @@ export default function BagSessionManager() {
   const requireAuthIfClosed = (sessionObj, title, description, actionCallback) => {
     const isClosed = sessionObj?.status === 'completed' || sessionObj?.status === 'closed';
     if (!isClosed) {
-      // Session is open - execute immediately without password prompt
       actionCallback();
       return;
     }
 
-    // Session is closed - require password authorization
     setAuthModalState({
       isOpen: true,
       title: title || 'Authorized Closed-Session Edit',
@@ -169,7 +167,7 @@ export default function BagSessionManager() {
     return Object.values(map);
   };
 
-  // 1. Fetch Sessions
+  // 1. Fetch Sessions (Decoupled from direct active selections to prevent stale closure data wipe)
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
@@ -231,36 +229,39 @@ export default function BagSessionManager() {
 
       setSessions(formatted);
 
-      if (selectedSessionId) {
-        const found = formatted.find((item) => item.id === selectedSessionId);
-        if (found) {
-          setSessionDetails(found);
-          if (selectedBgGroup) {
-            const updatedGroup = found.bgGroups.find(
-              (g) => g.bg_tracking_id === selectedBgGroup.bg_tracking_id
-            );
-            if (updatedGroup) {
-              setSelectedBgGroup({
-                ...updatedGroup,
-                sessionTitle: found.title,
-                sessionDate: found.session_date,
-                sessionId: found.id,
-              });
-            }
+      // Dynamically sync active inspection details without triggering full-state drops
+      setSessionDetails((prevSession) => {
+        if (!prevSession) return null;
+        const matched = formatted.find((s) => s.id === prevSession.id);
+        return matched || null;
+      });
+
+      setSelectedBgGroup((prevGroup) => {
+        if (!prevGroup) return null;
+        for (const s of formatted) {
+          const matchedBg = s.bgGroups.find((g) => g.bg_tracking_id === prevGroup.bg_tracking_id);
+          if (matchedBg) {
+            return {
+              ...matchedBg,
+              sessionTitle: s.title,
+              sessionDate: s.session_date,
+              sessionId: s.id,
+            };
           }
         }
-      }
+        return null;
+      });
     } catch (err) {
       console.error('Error fetching sessions:', err);
       showToast(err.message || 'Failed to load sessions', 'error');
     } finally {
       setLoading(false);
     }
-  }, [selectedSessionId, selectedBgGroup, showToast]);
+  }, [showToast]);
 
   useEffect(() => {
     fetchSessions();
-  }, []);
+  }, [fetchSessions]);
 
   const handleSelectSession = (session) => {
     setSelectedSessionId(session.id);
@@ -594,26 +595,28 @@ export default function BagSessionManager() {
     );
   };
 
-  // 7. Delete Handlers with Conditional Password Protection
+  // 7. Delete Handlers with Fixed Optimistic State Filter
   const handleDeleteSessionPrompt = (sessionId, sessionTitle) => {
-    const targetSession = sessions.find((s) => s.id === sessionId);
     const performDelete = async () => {
       try {
         const { error } = await supabase.from('bag_sessions').delete().eq('id', sessionId);
         if (error) throw error;
 
         showToast('Session removed successfully', 'success');
+
+        // Optimistically update sessions list so UI never requires a hard reload
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
         if (selectedSessionId === sessionId) {
           setSelectedSessionId(null);
           setSessionDetails(null);
         }
-        await fetchSessions();
       } catch (err) {
         showToast(err.message || 'Failed to delete session', 'error');
+        await fetchSessions();
       }
     };
 
-    // Always require confirmation password for deleting an entire session
     setAuthModalState({
       isOpen: true,
       title: 'Delete Session',
@@ -761,8 +764,8 @@ export default function BagSessionManager() {
           ? s.status === 'open'
           : s.status === 'completed' || s.status === 'closed';
       const matchesSearch = sessionSearchTerm
-        ? s.title.toLowerCase().includes(sessionSearchTerm.toLowerCase()) ||
-          s.bgGroups?.some((b) => b.bg_tracking_id.toLowerCase().includes(sessionSearchTerm.toLowerCase()))
+        ? s.title?.toLowerCase().includes(sessionSearchTerm.toLowerCase()) ||
+          s.bgGroups?.some((b) => b.bg_tracking_id?.toLowerCase().includes(sessionSearchTerm.toLowerCase()))
         : true;
       return matchesDate && matchesStatus && matchesSearch;
     });
@@ -777,7 +780,7 @@ export default function BagSessionManager() {
     if (!sessionDetails?.bgGroups) return [];
     return sessionDetails.bgGroups.filter((g) => {
       const matchesSearch = workspaceBgSearch.trim()
-        ? g.bg_tracking_id.toLowerCase().includes(workspaceBgSearch.toLowerCase())
+        ? g.bg_tracking_id?.toLowerCase().includes(workspaceBgSearch.toLowerCase())
         : true;
       const matchesType =
         workspaceBagTypeFilter === 'all' ? true : g.bag_type === workspaceBagTypeFilter;
@@ -1204,7 +1207,7 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* TAB 2: SESSION WORKSPACE (REMOVED INTERNAL SESSION SWITCHER LIST) */}
+      {/* TAB 2: SESSION WORKSPACE */}
       {activeTab === 'sessions' && (
         <div className="space-y-4">
           {sessionDetails ? (
@@ -2089,7 +2092,7 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* MODAL 5: PASSWORD CONFIRMATION MODAL (ONLY PROMPTED IF SESSION IS CLOSED OR DELETING SESSION) */}
+      {/* MODAL 5: PASSWORD CONFIRMATION MODAL */}
       {authModalState.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 space-y-3">
