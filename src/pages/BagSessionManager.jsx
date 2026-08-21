@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase';
 import { useToast } from '../lib/useToast';
 
-// Master passcode set to admin123 (or configurable via VITE_DELETE_PASSWORD)
+// Master deletion / edit passcode set to admin123
 const MASTER_DELETE_PASSWORD = import.meta.env.VITE_DELETE_PASSWORD || 'admin123';
 
 export default function BagSessionManager() {
@@ -46,6 +46,14 @@ export default function BagSessionManager() {
   const [targetBgForImport, setTargetBgForImport] = useState(null);
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [mailSessionTarget, setMailSessionTarget] = useState(null);
+
+  // New: Manual Single Bag Creator Modal State
+  const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
+  const [manualBagForm, setManualBagForm] = useState({
+    bg_tracking_id: '',
+    bag_type: 'tro',
+    tids_text: '',
+  });
 
   // Reusable Confirmation & Password Auth Modal State
   const [confirmModalState, setConfirmModalState] = useState({
@@ -575,7 +583,116 @@ export default function BagSessionManager() {
     );
   };
 
-  // 6. Single Tracking Item Add inside Inspector
+  // 6. Manual Add Single Bag ID (with optional initial TIDs)
+  const handleCreateManualBag = async (e) => {
+    e.preventDefault();
+    if (!sessionDetails) {
+      showToast('Select a session first', 'error');
+      return;
+    }
+
+    const customBgId = manualBagForm.bg_tracking_id.trim();
+    if (!customBgId) {
+      showToast('Please enter a BG Tracking ID', 'error');
+      return;
+    }
+
+    const performCreateBag = async () => {
+      setSubmitting(true);
+      try {
+        let existingBag = sessionDetails.rawBags?.find((b) => b.bg_tracking_id === customBgId);
+        let bagFkId = existingBag?.id;
+
+        if (!existingBag) {
+          const { data: newBag, error: bagErr } = await supabase
+            .from('dispatch_bags')
+            .insert([
+              {
+                session_id: sessionDetails.id,
+                bag_id: customBgId,
+                bg_tracking_id: customBgId,
+                destination: manualBagForm.bag_type,
+                status: 'open',
+              },
+            ])
+            .select()
+            .single();
+
+          if (bagErr) throw bagErr;
+          bagFkId = newBag.id;
+        } else if (existingBag.destination !== manualBagForm.bag_type) {
+          await supabase
+            .from('dispatch_bags')
+            .update({ destination: manualBagForm.bag_type })
+            .eq('id', existingBag.id);
+        }
+
+        // Process attached tracking IDs if provided
+        const rawTids = manualBagForm.tids_text
+          .split(/[\r\n,]+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+
+        if (rawTids.length > 0) {
+          const currentGroupItems = sessionDetails.bgGroups?.find(
+            (g) => g.bg_tracking_id === customBgId
+          )?.items || [];
+          const existingTrackingIds = new Set(currentGroupItems.map((i) => i.tracking_id));
+
+          const itemsToInsert = [];
+          let duplicateCount = 0;
+
+          rawTids.forEach((tid) => {
+            if (existingTrackingIds.has(tid)) {
+              duplicateCount++;
+            } else {
+              existingTrackingIds.add(tid);
+              itemsToInsert.push({
+                session_id: sessionDetails.id,
+                bag_id_fk: bagFkId,
+                bag_id: customBgId,
+                tracking_id: tid,
+                bg_tracking_id: customBgId,
+                category: 'SUR/SURF',
+                status: 'manifested',
+              });
+            }
+          });
+
+          if (itemsToInsert.length > 0) {
+            const { error: itemsErr } = await supabase.from('bagged_items').insert(itemsToInsert);
+            if (itemsErr) throw itemsErr;
+          }
+
+          if (duplicateCount > 0) {
+            showToast(`Added ${itemsToInsert.length} items. Skipped ${duplicateCount} duplicate(s).`, 'info');
+          } else {
+            showToast(`Created BG ${customBgId} with ${itemsToInsert.length} item(s)!`, 'success');
+          }
+        } else {
+          showToast(`Created BG Tracking ID ${customBgId} successfully!`, 'success');
+        }
+
+        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+        setIsManualBagModalOpen(false);
+        await fetchSessions();
+      } catch (err) {
+        console.error('Manual bag creation error:', err);
+        showToast(err.message || 'Failed to create Bag ID', 'error');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    requireAuthIfClosed(
+      sessionDetails,
+      'Authorize Closed-Session Bag Entry',
+      'This session is currently CLOSED. Enter master passcode to add this bag.',
+      performCreateBag
+    );
+  };
+
+  // 7. Single Tracking Item Add inside Inspector
   const handleAddTrackingToCurrentBg = async () => {
     const val = modalSingleTrackingInput.trim();
     if (!val || !selectedBgGroup) return;
@@ -642,7 +759,7 @@ export default function BagSessionManager() {
     );
   };
 
-  // 7. Delete Handlers with Custom Confirmation Modal & State Preservation
+  // 8. Delete Handlers with Custom Confirmation Modal & State Preservation
   const handleDeleteSessionPrompt = (sessionId, sessionTitle) => {
     const performDelete = async () => {
       try {
@@ -752,7 +869,7 @@ export default function BagSessionManager() {
     });
   };
 
-  // 8. Global Search
+  // 9. Global Search
   const handleGlobalSearch = async (e) => {
     e?.preventDefault();
     if (!globalQuery.trim()) return;
@@ -792,7 +909,7 @@ export default function BagSessionManager() {
     }
   };
 
-  // 9. Stats & Filters
+  // 10. Stats & Filters
   const stats = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     let totalSessions = sessions.length;
@@ -865,7 +982,7 @@ export default function BagSessionManager() {
     });
   }, [sessionDetails, workspaceBgSearch, workspaceBagTypeFilter]);
 
-  // 10. Copy Rich Mailable HTML & Text Format to Clipboard
+  // 11. Copy Rich Mailable HTML & Text Format to Clipboard
   const copyFormattedMail = () => {
     if (!emailTableRef.current) return;
 
@@ -966,6 +1083,7 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
+          {/* Enhanced Multi-Metric Dashboard Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
@@ -999,6 +1117,7 @@ export default function BagSessionManager() {
             </div>
           </div>
 
+          {/* Filter Bar with Quick Status Pills */}
           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-2 items-center">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <input
@@ -1077,6 +1196,7 @@ export default function BagSessionManager() {
             </div>
           </div>
 
+          {/* Sessions List - Closed Sessions have reduced opacity */}
           <div className="space-y-3">
             {loading ? (
               <div className="p-8 text-center text-xs text-gray-400 bg-white rounded-lg border">
@@ -1159,7 +1279,7 @@ export default function BagSessionManager() {
                               ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
                               : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
                           }`}
-                          title={isClosed ? 'Reopen this session' : 'Close this session'}
+                          title={isClosed ? 'Reopen this session (Requires Passcode)' : 'Close this session'}
                         >
                           {isClosed ? 'Reopen' : 'Close Session'}
                         </button>
@@ -1291,6 +1411,7 @@ export default function BagSessionManager() {
                   : 'bg-white border-gray-200'
               }`}
             >
+              {/* Active Session Info & Operational Controls Bar */}
               <div className="p-3.5 bg-gray-50 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1317,6 +1438,17 @@ export default function BagSessionManager() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                  {/* New: Add Single Bag ID Button */}
+                  <button
+                    onClick={() => {
+                      setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+                      setIsManualBagModalOpen(true);
+                    }}
+                    className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-2xs transition flex items-center justify-center gap-1"
+                  >
+                    <span>+ Add Single Bag ID</span>
+                  </button>
+
                   <button
                     onClick={() => {
                       setTargetBgForImport(null);
@@ -1359,6 +1491,7 @@ export default function BagSessionManager() {
                 </div>
               </div>
 
+              {/* Workspace Bags Filter Bar */}
               <div className="p-2.5 bg-white border-b flex justify-between items-center gap-2">
                 <span className="text-xs font-bold text-gray-800">
                   Assigned Bags ({filteredWorkspaceBgs.length})
@@ -1385,18 +1518,30 @@ export default function BagSessionManager() {
                 </div>
               </div>
 
+              {/* BG Tracking Rows */}
               {filteredWorkspaceBgs.length === 0 ? (
                 <div className="p-12 text-center text-xs text-gray-400 space-y-2">
                   <p>No BG Tracking IDs found in this session workspace.</p>
-                  <button
-                    onClick={() => {
-                      setTargetBgForImport(null);
-                      setIsBulkImporting(true);
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
-                  >
-                    + Bulk Paste Manifest
-                  </button>
+                  <div className="flex justify-center gap-2">
+                    <button
+                      onClick={() => {
+                        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+                        setIsManualBagModalOpen(true);
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
+                    >
+                      + Add Single Bag ID
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTargetBgForImport(null);
+                        setIsBulkImporting(true);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
+                    >
+                      + Bulk Paste Manifest
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100 bg-white">
@@ -1738,6 +1883,104 @@ export default function BagSessionManager() {
                   }`}
                 >
                   {submitting ? 'Importing...' : `Import as ${selectedBagType === 'tro' ? 'TRO' : 'Missroute'}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: MODAL 2.5 - MANUALLY CREATE SINGLE BAG ID WITH OPTIONAL TIDS */}
+      {isManualBagModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+            <div className="flex justify-between items-center border-b pb-2">
+              <div>
+                <h3 className="font-bold text-gray-900 text-xs">Add Single Bag ID</h3>
+                <p className="text-[10px] text-gray-500">Session: {sessionDetails?.title}</p>
+              </div>
+              <button
+                onClick={() => setIsManualBagModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateManualBag} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  BG Tracking ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. ESURSURF-1919366 or ENCRNDC-2966378"
+                  value={manualBagForm.bg_tracking_id}
+                  onChange={(e) => setManualBagForm({ ...manualBagForm, bg_tracking_id: e.target.value })}
+                  className="w-full text-[11px] font-mono border border-gray-300 rounded p-1.5 focus:border-indigo-500 focus:outline-none"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Select Bag Type</label>
+                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'tro' })}
+                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                      manualBagForm.bag_type === 'tro'
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>📦 TRO Bag (RTO)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'missroute' })}
+                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                      manualBagForm.bag_type === 'missroute'
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>⚠️ Missroute Bag</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                  Tracking IDs / TIDs (Optional - One per line / comma separated)
+                </label>
+                <textarea
+                  rows={5}
+                  placeholder={`FMPR0948731050\nFMPR0948731051\nMYEC1115211455`}
+                  value={manualBagForm.tids_text}
+                  onChange={(e) => setManualBagForm({ ...manualBagForm, tids_text: e.target.value })}
+                  className="w-full text-[11px] font-mono border border-gray-300 rounded p-2 focus:border-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  You can leave this empty and add items one by one inside the session.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-1.5 pt-1 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsManualBagModalOpen(false)}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting || !manualBagForm.bg_tracking_id.trim()}
+                  className="px-3.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded shadow-2xs disabled:opacity-50 transition"
+                >
+                  {submitting ? 'Creating Bag...' : 'Add Bag ID'}
                 </button>
               </div>
             </form>
@@ -2162,7 +2405,7 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* REUSABLE CUSTOM CONFIRMATION & AUTHENTICATION MODAL (ON EVERY DELETE & REOPEN) */}
+      {/* MODAL 5: REUSABLE CONFIRMATION & PASSWORD AUTHENTICATION MODAL */}
       {confirmModalState.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
