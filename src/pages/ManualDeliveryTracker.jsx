@@ -11,7 +11,8 @@ import {
   Smartphone,
   CheckSquare,
   Archive,
-  Trash2 
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { 
@@ -19,12 +20,15 @@ import {
   createManualDelivery, 
   updateManualDelivery, 
   syncManualDeliveryToLpLoss,
-  deleteManualDelivery 
+  deleteManualDelivery,
+  fetchLossLedgerRecords
 } from '../lib/lpService.js';
+import { supabase } from '../lib/supabase.js';
 
 export function ManualDeliveryTracker() {
   const toast = useToast();
   const [records, setRecords] = useState([]);
+  const [lossLedgerTids, setLossLedgerTids] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -37,11 +41,23 @@ export function ManualDeliveryTracker() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSyncingId, setIsSyncingId] = useState(null);
 
+  // Real-time Loss Warning State on Input
+  const [isInputAlreadyLoss, setIsInputAlreadyLoss] = useState(false);
+
   async function loadData() {
     setLoading(true);
     try {
-      const data = await fetchManualDeliveries();
-      setRecords(data);
+      const [deliveries, lossLedger] = await Promise.all([
+        fetchManualDeliveries(),
+        fetchLossLedgerRecords()
+      ]);
+      
+      setRecords(deliveries);
+
+      const tidSet = new Set(
+        (lossLedger || []).map(r => (r.tracking_id || '').trim().toUpperCase())
+      );
+      setLossLedgerTids(tidSet);
     } catch (err) {
       toast('Error fetching manual delivery logs.', 'error');
     } finally {
@@ -53,6 +69,21 @@ export function ManualDeliveryTracker() {
     loadData();
   }, []);
 
+  // Check in real-time whether typed/scanned tracking ID is in loss_ledger
+  useEffect(() => {
+    const clean = trackingId.trim().toUpperCase();
+    if (!clean) {
+      setIsInputAlreadyLoss(false);
+      return;
+    }
+
+    if (lossLedgerTids.has(clean)) {
+      setIsInputAlreadyLoss(true);
+    } else {
+      setIsInputAlreadyLoss(false);
+    }
+  }, [trackingId, lossLedgerTids]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!trackingId.trim() || !customerPhone.trim()) {
@@ -60,22 +91,45 @@ export function ManualDeliveryTracker() {
       return;
     }
 
+    const cleanTid = trackingId.trim().toUpperCase();
     setIsSubmitting(true);
+
+    // Check if the TID exists in loss_ledger
+    let isLossMatch = lossLedgerTids.has(cleanTid);
+    if (!isLossMatch) {
+      try {
+        const { data } = await supabase
+          .from('loss_ledger')
+          .select('tracking_id')
+          .ilike('tracking_id', cleanTid)
+          .maybeSingle();
+        if (data) isLossMatch = true;
+      } catch (e) {
+        // Ignored
+      }
+    }
+
     const payload = {
-      tracking_id: trackingId.trim().toUpperCase(),
-      delivery_status: deliveryStatus,
+      tracking_id: cleanTid,
+      delivery_status: isLossMatch ? 'ALREADY_MARKED_LOSS' : deliveryStatus,
       cash_status: cashStatus,
       customer_phone: customerPhone.trim(),
-      notes: notes.trim() || null,
-      synced_to_lp: false
+      notes: notes.trim() ? (isLossMatch ? `${notes.trim()} [ALREADY IN LOSS LEDGER]` : notes.trim()) : (isLossMatch ? '[ALREADY IN LOSS LEDGER]' : null),
+      synced_to_lp: isLossMatch
     };
 
     try {
       await createManualDelivery(payload);
-      toast(`Logged Hub Handover: ${payload.tracking_id}`, 'success');
+      if (isLossMatch) {
+        toast(`⚠️ Logged ${cleanTid}: Identified as ALREADY MARKED LOSS in Loss Ledger!`, 'error');
+      } else {
+        toast(`Logged Hub Handover: ${payload.tracking_id}`, 'success');
+      }
+
       setTrackingId('');
       setCustomerPhone('');
       setNotes('');
+      setIsInputAlreadyLoss(false);
       await loadData();
     } catch (err) {
       toast('Failed to record manual hub delivery entry.', 'error');
@@ -85,16 +139,17 @@ export function ManualDeliveryTracker() {
   }
 
   async function handleCrossSyncLpLoss(item) {
-    if (!window.confirm(`Escalate shipment ${item.tracking_id} to Loss Archives? This will sync directly into the primary Loss Prevention module.`)) return;
+    const wmNameToUse = item.notes?.trim() || 'MANUAL HUB ORDER (UNRESOLVED)';
+    if (!window.confirm(`Escalate shipment ${item.tracking_id} to the Loss Ledger with Wishmaster Name: "${wmNameToUse}"?`)) return;
     
     setIsSyncingId(item.id);
     try {
       await syncManualDeliveryToLpLoss(item);
       setRecords(prev => prev.map(r => r.id === item.id ? { ...r, synced_to_lp: true } : r));
-      toast(`Shipment ${item.tracking_id} successfully mapped to primary LP Loss database table.`, 'success');
+      toast(`Shipment ${item.tracking_id} mapped to Loss Ledger under Wishmaster: "${wmNameToUse}".`, 'success');
       await loadData();
     } catch (err) {
-      toast('Error mapping transaction across storage modules.', 'error');
+      toast('Error mapping transaction to Loss Ledger.', 'error');
     } finally {
       setIsSyncingId(null);
     }
@@ -145,28 +200,30 @@ export function ManualDeliveryTracker() {
     }
   }
 
-  // --- FILTER GENERATION ---
+  // Filter Generation
   const q = searchQuery.toLowerCase();
 
-  // 1. Active Pending Matrix (Not synced to LP and not Cleared by ERP)
+  // 1. Active Pending Matrix (Not synced to Loss Ledger and not Cleared by ERP)
   const activeRecords = records.filter(rec => {
     if (rec.synced_to_lp || rec.delivery_status === 'ERP_CLEARED_DELIVERED') return false;
     return (
       rec.tracking_id?.toLowerCase().includes(q) ||
       rec.customer_phone?.includes(q) ||
       rec.cash_status?.toLowerCase().includes(q) ||
-      rec.delivery_status?.toLowerCase().includes(q)
+      rec.delivery_status?.toLowerCase().includes(q) ||
+      rec.notes?.toLowerCase().includes(q)
     );
   });
 
-  // 2. Clear / Loss Marked Archives (Either Synced to LP or ERP Cleared)
+  // 2. Clear / Loss Marked Archives
   const archivedRecords = records.filter(rec => {
     if (!rec.synced_to_lp && rec.delivery_status !== 'ERP_CLEARED_DELIVERED') return false;
     return (
       rec.tracking_id?.toLowerCase().includes(q) ||
       rec.customer_phone?.includes(q) ||
       rec.cash_status?.toLowerCase().includes(q) ||
-      rec.delivery_status?.toLowerCase().includes(q)
+      rec.delivery_status?.toLowerCase().includes(q) ||
+      rec.notes?.toLowerCase().includes(q)
     );
   });
 
@@ -185,7 +242,7 @@ export function ManualDeliveryTracker() {
             <PackageCheck className="h-4 w-4 text-emerald-600" /> Hub Manual Counter Delivery Log
           </h2>
           <p className="text-[11px] text-ink-500 max-w-2xl mt-0.5 leading-relaxed">
-            Log shipments picked up manually by customers at the hub. Tracks held cash, direct mobile GPay transfers, and phone numbers for automated cross-sync to Loss Prevention workflows.
+            Log shipments picked up manually by customers at the hub. Pushing a loss automatically assigns the delivery notes as the Wishmaster name in the <b>Loss Ledger</b>.
           </p>
         </div>
       </div>
@@ -202,11 +259,21 @@ export function ManualDeliveryTracker() {
               <label className="text-[10px] font-bold text-ink-600 block mb-0.5">Shipment Tracking ID</label>
               <input 
                 type="text" 
-                className="input h-7 text-[11px] font-mono uppercase font-bold px-2" 
+                className={`input h-7 text-[11px] font-mono uppercase font-bold px-2 w-full ${
+                  isInputAlreadyLoss ? 'border-rose-500 bg-rose-50/50 text-rose-900' : ''
+                }`}
                 placeholder="e.g. FMPC6250362428" 
                 value={trackingId} 
                 onChange={e => setTrackingId(e.target.value)} 
               />
+              
+              {/* REAL-TIME LOSS LEDGER WARNING BADGE */}
+              {isInputAlreadyLoss && (
+                <div className="mt-1 p-1.5 bg-rose-100 border border-rose-300 rounded text-rose-900 font-bold text-[10px] flex items-center gap-1 animate-pulse">
+                  <AlertTriangle className="h-3 w-3 text-rose-700 shrink-0" />
+                  <span>ALREADY MARKED LOSS in Loss Ledger!</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -215,7 +282,7 @@ export function ManualDeliveryTracker() {
                 <Phone className="absolute left-2.5 top-2 h-3 w-3 text-ink-400" />
                 <input 
                   type="tel" 
-                  className="input h-7 text-[11px] pl-7 font-mono font-bold px-2" 
+                  className="input h-7 text-[11px] pl-7 font-mono font-bold px-2 w-full" 
                   placeholder="e.g. 9876543210" 
                   value={customerPhone} 
                   onChange={e => setCustomerPhone(e.target.value)} 
@@ -252,10 +319,12 @@ export function ManualDeliveryTracker() {
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-ink-600 block mb-0.5">Internal Hub Settlement Notes</label>
+              <label className="text-[10px] font-bold text-ink-600 block mb-0.5">
+                Internal Hub Settlement Notes / WM Name
+              </label>
               <textarea 
                 className="input text-[11px] h-12 p-1.5 resize-none leading-normal font-medium"
-                placeholder="Note down cash handover parameters..."
+                placeholder="e.g. shamil delivered, niyas loss, etc..."
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
               />
@@ -301,94 +370,106 @@ export function ManualDeliveryTracker() {
                       <th className="p-2.5">Customer Phone</th>
                       <th className="p-2.5">Handover Status</th>
                       <th className="p-2.5">Cash Position</th>
-                      <th className="p-2.5">Notes</th>
+                      <th className="p-2.5">Notes (WM Map)</th>
                       <th className="p-2.5 text-center w-40">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-100">
-                    {activeRecords.map(item => (
-                      <tr key={item.id} className="hover:bg-ink-50/30 transition-colors">
-                        <td className="p-2.5 font-mono font-bold text-ink-900 uppercase tracking-wide">{item.tracking_id}</td>
-                        <td className="p-2.5 font-mono font-medium text-ink-600">{item.customer_phone}</td>
-                        <td className="p-2.5">
-                          <span className="px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase bg-emerald-50 border-emerald-200 text-emerald-700">
-                            {item.delivery_status === 'CANCELLED_DELAYED' ? 'CANCELLED' : 'DELIVERED'}
-                          </span>
-                        </td>
-                        <td className="p-2.5">
-                          <span className={`px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-tight flex items-center gap-0.5 max-w-max ${
-                            item.cash_status === 'RECONCILED_WITH_WM' 
-                              ? 'bg-blue-50 border-blue-200 text-blue-700' 
-                              : item.cash_status === 'GPAY_TO_HUB_INCHARGE'
-                              ? 'bg-purple-50 border-purple-200 text-purple-700 font-extrabold'
-                              : item.cash_status === 'NO_CASH_PREPAID' 
-                              ? 'bg-ink-100 border-ink-200 text-ink-600'
-                              : 'bg-amber-50 border-amber-200 text-amber-700 font-black animate-pulse'
-                          }`}>
-                            {item.cash_status === 'GPAY_TO_HUB_INCHARGE' && <Smartphone className="h-2.5 w-2.5" />}
-                            {item.cash_status.replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-ink-500 max-w-[120px] truncate italic text-[10px]" title={item.notes}>
-                          {item.notes || '—'}
-                        </td>
-                        <td className="p-2.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => toggleCashSettlement(item.id, item.cash_status)}
-                              className="p-1 rounded bg-ink-50 border border-ink-200 text-ink-600 hover:text-brand-600 hover:bg-brand-50 transition-all"
-                              title="Cycle Financial Settlement Status"
-                            >
-                              <CheckCircle className="h-3 w-3" />
-                            </button>
+                    {activeRecords.map(item => {
+                      const isItemInLossLedger = lossLedgerTids.has(item.tracking_id.toUpperCase()) || item.delivery_status === 'ALREADY_MARKED_LOSS';
 
-                            <button
-                              onClick={() => handleMarkErpCleared(item)}
-                              className="p-1 rounded bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"
-                              title="Mark as Cleared on Main ERP Portal"
-                            >
-                              <CheckSquare className="h-3 w-3" />
-                            </button>
+                      return (
+                        <tr key={item.id} className={`transition-colors ${isItemInLossLedger ? 'bg-rose-50/40 hover:bg-rose-50/70' : 'hover:bg-ink-50/30'}`}>
+                          <td className="p-2.5 font-mono font-bold text-ink-900 uppercase tracking-wide">
+                            {item.tracking_id}
+                          </td>
+                          <td className="p-2.5 font-mono font-medium text-ink-600">{item.customer_phone}</td>
+                          <td className="p-2.5">
+                            {isItemInLossLedger ? (
+                              <span className="px-1.5 py-0.5 rounded border text-[8px] font-mono font-black uppercase bg-rose-600 text-white border-rose-700">
+                                ALREADY MARKED LOSS
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase bg-emerald-50 border-emerald-200 text-emerald-700">
+                                {item.delivery_status === 'CANCELLED_DELAYED' ? 'CANCELLED' : 'DELIVERED'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            <span className={`px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase tracking-tight flex items-center gap-0.5 max-w-max ${
+                              item.cash_status === 'RECONCILED_WITH_WM' 
+                                ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                                : item.cash_status === 'GPAY_TO_HUB_INCHARGE'
+                                ? 'bg-purple-50 border-purple-200 text-purple-700 font-extrabold'
+                                : item.cash_status === 'NO_CASH_PREPAID' 
+                                ? 'bg-ink-100 border-ink-200 text-ink-600'
+                                : 'bg-amber-50 border-amber-200 text-amber-700 font-black animate-pulse'
+                            }`}>
+                              {item.cash_status === 'GPAY_TO_HUB_INCHARGE' && <Smartphone className="h-2.5 w-2.5" />}
+                              {item.cash_status.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-ink-700 font-medium max-w-[140px] truncate text-[10px]" title={item.notes}>
+                            {item.notes || '—'}
+                          </td>
+                          <td className="p-2.5">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => toggleCashSettlement(item.id, item.cash_status)}
+                                className="p-1 rounded bg-ink-50 border border-ink-200 text-ink-600 hover:text-brand-600 hover:bg-brand-50 transition-all"
+                                title="Cycle Financial Settlement Status"
+                              >
+                                <CheckCircle className="h-3 w-3" />
+                              </button>
 
-                            <button
-                              onClick={() => handleDeleteRecord(item)}
-                              className="p-1 rounded bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition-all"
-                              title="Delete Record Permanently"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                              <button
+                                onClick={() => handleMarkErpCleared(item)}
+                                className="p-1 rounded bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"
+                                title="Mark as Cleared on Main ERP Portal"
+                              >
+                                <CheckSquare className="h-3 w-3" />
+                              </button>
 
-                            <span className="text-ink-200 select-none">|</span>
+                              <button
+                                onClick={() => handleDeleteRecord(item)}
+                                className="p-1 rounded bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition-all"
+                                title="Delete Record Permanently"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
 
-                            <button
-                              onClick={() => handleCrossSyncLpLoss(item)}
-                              className="flex items-center gap-0.5 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-1.5 py-0.5 rounded shadow-3xs transition-all disabled:opacity-40"
-                              title="Sync to primary LP Tracker logs table"
-                              disabled={isSyncingId === item.id}
-                            >
-                              {isSyncingId === item.id ? (
-                                <RefreshCw className="h-2 w-2 animate-spin" />
-                              ) : (
-                                <>
-                                  <ShieldAlert className="h-2.5 w-2.5" /> Loss
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              <span className="text-ink-200 select-none">|</span>
+
+                              <button
+                                onClick={() => handleCrossSyncLpLoss(item)}
+                                className="flex items-center gap-0.5 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-1.5 py-0.5 rounded shadow-3xs transition-all disabled:opacity-40"
+                                title="Push directly to dedicated Loss Ledger table"
+                                disabled={isSyncingId === item.id}
+                              >
+                                {isSyncingId === item.id ? (
+                                  <RefreshCw className="h-2 w-2 animate-spin" />
+                                ) : (
+                                  <>
+                                    <ShieldAlert className="h-2.5 w-2.5" /> Loss
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
           </div>
 
-          {/* 2. ARCHIVED ENTRIES (CLEAR & LOSS RECORDS SHOWN BELOW) */}
+          {/* 2. ARCHIVED ENTRIES */}
           <div className="card p-0 border border-ink-200 overflow-hidden bg-ink-50/10 opacity-85">
             <div className="p-2 border-b border-ink-100 bg-ink-100/40 flex items-center gap-1.5 font-bold text-ink-700">
               <Archive className="h-3 w-3 text-ink-500" />
-              <span>Processed Archives (ERP Cleared / LP Loss Synced) ({archivedRecords.length})</span>
+              <span>Processed Archives (ERP Cleared / Synced to Loss Ledger) ({archivedRecords.length})</span>
             </div>
 
             <div className="overflow-x-auto">
@@ -414,7 +495,7 @@ export function ManualDeliveryTracker() {
                         <td className="p-2">
                           {item.synced_to_lp ? (
                             <span className="px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold bg-red-50 border-red-100 text-red-600">
-                              🚨 LP LOSS ARCHIVE
+                              🚨 IN LOSS LEDGER
                             </span>
                           ) : (
                             <span className="px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold bg-blue-50 border-blue-100 text-blue-600">

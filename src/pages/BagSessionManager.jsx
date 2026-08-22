@@ -26,6 +26,16 @@ export default function BagSessionManager() {
     [toastHook]
   );
 
+  // Helper: Format YYYY-MM-DD to DD/MM/YYYY (e.g. 28/10/2026)
+  const formatToDisplayDate = (dateStr) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
+  };
+
   // Tabs: 'dashboard' | 'sessions' | 'global_search'
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
@@ -47,13 +57,13 @@ export default function BagSessionManager() {
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [mailSessionTarget, setMailSessionTarget] = useState(null);
 
-  // New: Manual Single Bag Creator Modal State
-  const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
+  // Manual Single Bag Creator Modal State
   const [manualBagForm, setManualBagForm] = useState({
     bg_tracking_id: '',
     bag_type: 'tro',
     tids_text: '',
   });
+  const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
 
   // Reusable Confirmation & Password Auth Modal State
   const [confirmModalState, setConfirmModalState] = useState({
@@ -68,7 +78,7 @@ export default function BagSessionManager() {
     onConfirm: null,
   });
 
-  // Bag Type State ('tro' | 'missroute')
+  // Bag Type State ('tro' | 'missroute' | 'tote')
   const [selectedBagType, setSelectedBagType] = useState('tro');
 
   // Quick single item scanning inside inspector modal
@@ -374,7 +384,7 @@ export default function BagSessionManager() {
 
     setSubmitting(true);
     try {
-      const title = sessionForm.title.trim() || `Session - ${sessionForm.session_date}`;
+      const title = sessionForm.title.trim() || `Session - ${formatToDisplayDate(sessionForm.session_date)}`;
       const { data, error } = await supabase
         .from('bag_sessions')
         .insert([
@@ -407,7 +417,7 @@ export default function BagSessionManager() {
     }
   };
 
-  // 4. Toggle Session Status (Close directly / Reopen with Password Confirmation)
+  // 4. Toggle Session Status
   const handleToggleSessionStatus = async (sessionId, currentStatus) => {
     const isClosed = currentStatus === 'completed' || currentStatus === 'closed';
 
@@ -457,7 +467,7 @@ export default function BagSessionManager() {
     }
   };
 
-  // 5. Bulk Import with Conditional Auth Check
+  // 5. Bulk Import
   const handleBulkImport = async (e) => {
     e?.preventDefault();
     if (!sessionDetails) {
@@ -551,6 +561,8 @@ export default function BagSessionManager() {
           }
         }
 
+        const bagLabel = selectedBagType === 'tro' ? 'TRO Bags' : selectedBagType === 'missroute' ? 'Missroute Bags' : 'Totes';
+
         if (skippedCount > 0) {
           showToast(
             `Added ${addedCount} [${selectedBagType.toUpperCase()}] shipments. Skipped ${skippedCount} duplicate(s).`,
@@ -558,7 +570,7 @@ export default function BagSessionManager() {
           );
         } else {
           showToast(
-            `Successfully imported ${addedCount} shipments as ${selectedBagType === 'tro' ? 'TRO Bags' : 'Missroute Bags'}!`,
+            `Successfully imported ${addedCount} shipments into ${bagLabel}!`,
             'success'
           );
         }
@@ -583,7 +595,7 @@ export default function BagSessionManager() {
     );
   };
 
-  // 6. Manual Add Single Bag ID (with optional initial TIDs)
+  // 6. Manual Add Single Bag / Tote
   const handleCreateManualBag = async (e) => {
     e.preventDefault();
     if (!sessionDetails) {
@@ -593,7 +605,7 @@ export default function BagSessionManager() {
 
     const customBgId = manualBagForm.bg_tracking_id.trim();
     if (!customBgId) {
-      showToast('Please enter a BG Tracking ID', 'error');
+      showToast('Please enter a Bag / Tote ID', 'error');
       return;
     }
 
@@ -627,7 +639,6 @@ export default function BagSessionManager() {
             .eq('id', existingBag.id);
         }
 
-        // Process attached tracking IDs if provided
         const rawTids = manualBagForm.tids_text
           .split(/[\r\n,]+/)
           .map((t) => t.trim())
@@ -667,10 +678,10 @@ export default function BagSessionManager() {
           if (duplicateCount > 0) {
             showToast(`Added ${itemsToInsert.length} items. Skipped ${duplicateCount} duplicate(s).`, 'info');
           } else {
-            showToast(`Created BG ${customBgId} with ${itemsToInsert.length} item(s)!`, 'success');
+            showToast(`Created ${manualBagForm.bag_type.toUpperCase()} ${customBgId} with ${itemsToInsert.length} item(s)!`, 'success');
           }
         } else {
-          showToast(`Created BG Tracking ID ${customBgId} successfully!`, 'success');
+          showToast(`Created ${manualBagForm.bag_type.toUpperCase()} ID ${customBgId} successfully!`, 'success');
         }
 
         setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
@@ -702,7 +713,7 @@ export default function BagSessionManager() {
     );
 
     if (alreadyExists) {
-      showToast(`Warning: Tracking ID "${val}" is already inside this BG group!`, 'error');
+      showToast(`Warning: Tracking ID "${val}" is already inside this bag/tote!`, 'error');
       return;
     }
 
@@ -759,7 +770,7 @@ export default function BagSessionManager() {
     );
   };
 
-  // 8. Delete Handlers with Custom Confirmation Modal & State Preservation
+  // 8. Delete Handlers
   const handleDeleteSessionPrompt = (sessionId, sessionTitle) => {
     const performDelete = async () => {
       try {
@@ -767,8 +778,6 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast('Session removed successfully', 'success');
-
-        // Optimistically remove session from local list so UI never blanks out
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
 
         if (selectedSessionId === sessionId) {
@@ -804,9 +813,8 @@ export default function BagSessionManager() {
 
         if (error) throw error;
 
-        showToast(`BG Tracking ID ${bgTrackingId} deleted`, 'success');
+        showToast(`Bag/Tote ID ${bgTrackingId} deleted`, 'success');
 
-        // Optimistically update sessionDetails state
         setSessionDetails((prev) => {
           if (!prev) return null;
           const updatedBgGroups = (prev.bgGroups || []).filter((g) => g.bg_tracking_id !== bgTrackingId);
@@ -820,15 +828,15 @@ export default function BagSessionManager() {
         if (selectedBgGroup?.bg_tracking_id === bgTrackingId) setSelectedBgGroup(null);
         await fetchSessions();
       } catch (err) {
-        showToast(err.message || 'Failed to delete BG record', 'error');
+        showToast(err.message || 'Failed to delete record', 'error');
       }
     };
 
     openConfirmModal({
-      title: 'Delete BG Tracking ID',
-      description: `Are you sure you want to delete BG Tracking ID "${bgTrackingId}" and all its recorded shipments?`,
+      title: 'Delete Bag / Tote',
+      description: `Are you sure you want to delete "${bgTrackingId}" and all its recorded shipments?`,
       isPasswordRequired: isClosed,
-      confirmButtonText: 'Delete BG Group',
+      confirmButtonText: 'Delete Bag/Tote',
       confirmButtonColor: 'bg-red-600 hover:bg-red-700',
       onConfirm: performDeleteBg,
     });
@@ -844,7 +852,6 @@ export default function BagSessionManager() {
 
         showToast('Tracking ID removed', 'success');
 
-        // Optimistically update selected BG group modal view
         setSelectedBgGroup((prev) => {
           if (!prev) return null;
           return {
@@ -1013,7 +1020,7 @@ export default function BagSessionManager() {
 
     const headers = ['Session Date', 'Session Title', 'Bag Type', 'BG Tracking ID', 'Tracking ID', 'Category', 'Status'];
     const rows = session.allItems.map((item) => [
-      session.session_date,
+      formatToDisplayDate(session.session_date),
       `"${session.title}"`,
       (item.bag_type || 'tro').toUpperCase(),
       item.bg_tracking_id || 'N/A',
@@ -1025,7 +1032,7 @@ export default function BagSessionManager() {
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const link = document.createElement('a');
     link.href = encodeURI(csvContent);
-    link.download = `Dispatch_${session.session_date}_${session.title.replace(/\s+/g, '_')}.csv`;
+    link.download = `Dispatch_${formatToDisplayDate(session.session_date).replace(/\//g, '-')}_${session.title.replace(/\s+/g, '_')}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1046,7 +1053,7 @@ export default function BagSessionManager() {
               Logistics Dispatch Hub
             </h1>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Unique BG Tracking ID management, TRO & Missroute categorization, and mailable dispatch reports.
+              Unique BG Tracking ID management, TRO, Missroute & Tote categorization, and mailable dispatch reports.
             </p>
           </div>
         </div>
@@ -1067,7 +1074,7 @@ export default function BagSessionManager() {
               activeTab === 'sessions' ? 'bg-white text-indigo-600 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Session Workspace {sessionDetails && `(${sessionDetails.bgGroups?.length || 0} BG IDs)`}
+            Session Workspace {sessionDetails && `(${sessionDetails.bgGroups?.length || 0} Bags/Totes)`}
           </button>
           <button
             onClick={() => setActiveTab('global_search')}
@@ -1083,7 +1090,6 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
-          {/* Enhanced Multi-Metric Dashboard Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
@@ -1091,7 +1097,7 @@ export default function BagSessionManager() {
               <span className="text-[9px] text-emerald-600 font-semibold">{stats.openCount} Open</span>
             </div>
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase text-indigo-500">Unique BG IDs</span>
+              <span className="text-[10px] font-bold uppercase text-indigo-500">Unique Bags/Totes</span>
               <p className="text-lg font-black text-indigo-600 mt-0.5">{stats.totalBgs}</p>
               <span className="text-[9px] text-gray-400 font-medium">~{stats.avgPerBag} pkts/bg</span>
             </div>
@@ -1101,7 +1107,7 @@ export default function BagSessionManager() {
               <span className="text-[9px] text-indigo-500 font-semibold">Active Parcels</span>
             </div>
             <div className="bg-gradient-to-br from-indigo-50 to-white p-3 rounded-lg border border-indigo-100 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase text-indigo-600">Today's BG IDs</span>
+              <span className="text-[10px] font-bold uppercase text-indigo-600">Today's Bags/Totes</span>
               <p className="text-lg font-black text-indigo-900 mt-0.5">{stats.todayBags}</p>
               <span className="text-[9px] text-indigo-400 font-medium">Daily Outward</span>
             </div>
@@ -1117,7 +1123,6 @@ export default function BagSessionManager() {
             </div>
           </div>
 
-          {/* Filter Bar with Quick Status Pills */}
           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-2 items-center">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <input
@@ -1196,7 +1201,6 @@ export default function BagSessionManager() {
             </div>
           </div>
 
-          {/* Sessions List - Closed Sessions have reduced opacity */}
           <div className="space-y-3">
             {loading ? (
               <div className="p-8 text-center text-xs text-gray-400 bg-white rounded-lg border">
@@ -1231,7 +1235,7 @@ export default function BagSessionManager() {
                           )}
                           <span className="font-bold text-gray-900 text-xs">{session.title}</span>
                           <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-gray-700">
-                            {session.session_date}
+                            {formatToDisplayDate(session.session_date)}
                           </span>
                           <span
                             className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded-full ${
@@ -1246,7 +1250,7 @@ export default function BagSessionManager() {
                           </span>
                         </div>
                         <p className="text-[11px] text-gray-500 mt-0.5">
-                          <span className="font-semibold text-indigo-600">{session.totalUniqueBgs} Unique BG IDs</span> •{' '}
+                          <span className="font-semibold text-indigo-600">{session.totalUniqueBgs} Unique Bags/Totes</span> •{' '}
                           <span className="font-semibold text-emerald-600">{session.totalPackets} Total Shipments</span>
                         </p>
                       </div>
@@ -1308,7 +1312,7 @@ export default function BagSessionManager() {
 
                     <div className="p-2.5">
                       {bgList.length === 0 ? (
-                        <p className="text-[11px] text-gray-400 italic">No BG Tracking IDs imported yet.</p>
+                        <p className="text-[11px] text-gray-400 italic">No Bags/Totes imported yet.</p>
                       ) : (
                         <div
                           className={
@@ -1320,6 +1324,7 @@ export default function BagSessionManager() {
                         >
                           {bgList.map((group) => {
                             const isMissroute = group.bag_type === 'missroute';
+                            const isTote = group.bag_type === 'tote';
                             return (
                               <div
                                 key={group.bg_tracking_id}
@@ -1334,7 +1339,9 @@ export default function BagSessionManager() {
                                 className={`p-2 border rounded-md cursor-pointer transition flex flex-col justify-between group shadow-2xs ${
                                   !isExpanded ? 'min-w-[155px] max-w-[170px] shrink-0' : ''
                                 } ${
-                                  isMissroute
+                                  isTote
+                                    ? 'bg-amber-50/50 hover:bg-amber-50 border-amber-200 hover:border-amber-300'
+                                    : isMissroute
                                     ? 'bg-rose-50/50 hover:bg-rose-50 border-rose-200 hover:border-rose-300'
                                     : 'bg-gray-50 hover:bg-indigo-50/50 border-gray-200 hover:border-indigo-300'
                                 }`}
@@ -1342,10 +1349,14 @@ export default function BagSessionManager() {
                                 <div className="flex justify-between items-start gap-1">
                                   <span
                                     className={`text-[8px] font-extrabold uppercase px-1 py-0.2 rounded ${
-                                      isMissroute ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                                      isTote
+                                        ? 'bg-amber-100 text-amber-900 font-black'
+                                        : isMissroute
+                                        ? 'bg-rose-100 text-rose-800'
+                                        : 'bg-blue-100 text-blue-800'
                                     }`}
                                   >
-                                    {isMissroute ? 'Missroute' : 'TRO'}
+                                    {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                                   </span>
                                   <span className="bg-white border text-gray-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full shadow-2xs">
                                     {group.items.length}
@@ -1417,7 +1428,7 @@ export default function BagSessionManager() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-base font-black text-gray-900">{sessionDetails.title}</h2>
                     <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-gray-200 text-gray-700">
-                      {sessionDetails.session_date}
+                      {formatToDisplayDate(sessionDetails.session_date)}
                     </span>
                     <span
                       className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
@@ -1432,13 +1443,12 @@ export default function BagSessionManager() {
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-500 mt-1">
-                    Unique BG IDs: <span className="font-bold text-indigo-600">{sessionDetails.bgGroups?.length || 0}</span> |{' '}
+                    Unique Bags/Totes: <span className="font-bold text-indigo-600">{sessionDetails.bgGroups?.length || 0}</span> |{' '}
                     Total Shipments: <span className="font-bold text-emerald-600">{sessionDetails.totalPackets || 0}</span>
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                  {/* New: Add Single Bag ID Button */}
                   <button
                     onClick={() => {
                       setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
@@ -1446,7 +1456,7 @@ export default function BagSessionManager() {
                     }}
                     className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-2xs transition flex items-center justify-center gap-1"
                   >
-                    <span>+ Add Single Bag ID</span>
+                    <span>+ Add Bag / Tote ID</span>
                   </button>
 
                   <button
@@ -1494,7 +1504,7 @@ export default function BagSessionManager() {
               {/* Workspace Bags Filter Bar */}
               <div className="p-2.5 bg-white border-b flex justify-between items-center gap-2">
                 <span className="text-xs font-bold text-gray-800">
-                  Assigned Bags ({filteredWorkspaceBgs.length})
+                  Assigned Bags / Totes ({filteredWorkspaceBgs.length})
                 </span>
 
                 <div className="flex gap-1.5">
@@ -1506,11 +1516,12 @@ export default function BagSessionManager() {
                     <option value="all">All Types</option>
                     <option value="tro">TRO Bags</option>
                     <option value="missroute">Missroute Bags</option>
+                    <option value="tote">Totes Only</option>
                   </select>
 
                   <input
                     type="text"
-                    placeholder="Filter by BG ID..."
+                    placeholder="Filter by Bag / Tote ID..."
                     value={workspaceBgSearch}
                     onChange={(e) => setWorkspaceBgSearch(e.target.value)}
                     className="text-[11px] border border-gray-300 rounded px-2 py-1 w-48 focus:border-indigo-500 focus:outline-none bg-white"
@@ -1521,7 +1532,7 @@ export default function BagSessionManager() {
               {/* BG Tracking Rows */}
               {filteredWorkspaceBgs.length === 0 ? (
                 <div className="p-12 text-center text-xs text-gray-400 space-y-2">
-                  <p>No BG Tracking IDs found in this session workspace.</p>
+                  <p>No Bags or Totes found in this session workspace.</p>
                   <div className="flex justify-center gap-2">
                     <button
                       onClick={() => {
@@ -1530,7 +1541,7 @@ export default function BagSessionManager() {
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
                     >
-                      + Add Single Bag ID
+                      + Add Bag / Tote ID
                     </button>
                     <button
                       onClick={() => {
@@ -1547,6 +1558,7 @@ export default function BagSessionManager() {
                 <div className="divide-y divide-gray-100 bg-white">
                   {filteredWorkspaceBgs.map((group, idx) => {
                     const isMissroute = group.bag_type === 'missroute';
+                    const isTote = group.bag_type === 'tote';
                     return (
                       <div
                         key={group.bg_tracking_id}
@@ -1560,12 +1572,14 @@ export default function BagSessionManager() {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span
                                 className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
-                                  isMissroute
+                                  isTote
+                                    ? 'bg-amber-100 text-amber-900 font-black'
+                                    : isMissroute
                                     ? 'bg-rose-100 text-rose-800'
                                     : 'bg-blue-100 text-blue-800'
                                 }`}
                               >
-                                {isMissroute ? 'Missroute' : 'TRO'}
+                                {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                               </span>
                               <span className="font-mono text-xs font-black text-gray-900 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
                                 {group.bg_tracking_id}
@@ -1603,7 +1617,7 @@ export default function BagSessionManager() {
                               setIsBulkImporting(true);
                             }}
                             className="p-1 text-gray-500 hover:text-emerald-700 rounded hover:bg-emerald-50 border border-gray-200"
-                            title="Paste shipments into this BG Tracking ID"
+                            title="Paste shipments into this Bag / Tote ID"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -1613,7 +1627,7 @@ export default function BagSessionManager() {
                           <button
                             onClick={() => handleDeleteBgGroupPrompt(group.bg_tracking_id)}
                             className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50"
-                            title="Delete this BG Group"
+                            title="Delete this Bag/Tote Group"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1647,7 +1661,7 @@ export default function BagSessionManager() {
             <div>
               <h2 className="text-xs font-bold text-gray-900">Global Historical Search</h2>
               <p className="text-[11px] text-gray-500">
-                Query across all past sessions to locate specific BG Tracking IDs, bag types, or parcel tracking codes.
+                Query across all past sessions to locate specific Bag/Tote IDs, bag types, or parcel tracking codes.
               </p>
             </div>
 
@@ -1657,7 +1671,7 @@ export default function BagSessionManager() {
                 onChange={(e) => setGlobalSearchType(e.target.value)}
                 className="text-[11px] font-semibold border border-gray-300 rounded px-2.5 py-1 bg-gray-50 focus:outline-none"
               >
-                <option value="bg_tracking_id">BG Tracking ID</option>
+                <option value="bg_tracking_id">Bag / Tote ID</option>
                 <option value="tracking_id">Tracking ID</option>
                 <option value="bag_id">Bag ID</option>
               </select>
@@ -1666,7 +1680,7 @@ export default function BagSessionManager() {
                 type="text"
                 value={globalQuery}
                 onChange={(e) => setGlobalQuery(e.target.value)}
-                placeholder="Enter exact or partial ID (e.g. ESURSURF-56565656 or FMPR0948731050)..."
+                placeholder="Enter exact or partial ID (e.g. 535-GNL-379608 or ESURSURF-56565656)..."
                 className="flex-1 text-[11px] border border-gray-300 rounded px-2.5 py-1 font-mono focus:border-indigo-500 focus:outline-none"
                 required
               />
@@ -1691,8 +1705,8 @@ export default function BagSessionManager() {
                 <table className="w-full text-left text-[11px] border-collapse">
                   <thead>
                     <tr className="bg-gray-50 border-b text-gray-500">
-                      <th className="py-2 px-3 font-semibold">Bag Type</th>
-                      <th className="py-2 px-3 font-semibold">BG Tracking ID</th>
+                      <th className="py-2 px-3 font-semibold">Classification</th>
+                      <th className="py-2 px-3 font-semibold">Bag / Tote ID</th>
                       <th className="py-2 px-3 font-semibold">Tracking ID</th>
                       <th className="py-2 px-3 font-semibold">Category</th>
                       <th className="py-2 px-3 font-semibold">Session Date</th>
@@ -1702,22 +1716,28 @@ export default function BagSessionManager() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {globalResults.map((item) => {
-                      const isMissroute = item.dispatch_bags?.destination === 'missroute';
+                      const bagType = item.dispatch_bags?.destination;
+                      const isTote = bagType === 'tote';
+                      const isMissroute = bagType === 'missroute';
                       return (
                         <tr key={item.id} className="hover:bg-gray-50 transition">
                           <td className="py-1.5 px-3">
                             <span
                               className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
-                                isMissroute ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'
+                                isTote
+                                  ? 'bg-amber-100 text-amber-900 font-black'
+                                  : isMissroute
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-blue-100 text-blue-800'
                               }`}
                             >
-                              {isMissroute ? 'Missroute' : 'TRO'}
+                              {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                             </span>
                           </td>
                           <td className="py-1.5 px-3 font-mono font-bold text-gray-900">{item.bg_tracking_id || 'N/A'}</td>
                           <td className="py-1.5 px-3 font-mono font-bold text-indigo-700">{item.tracking_id}</td>
                           <td className="py-1.5 px-3 text-gray-600">{item.category}</td>
-                          <td className="py-1.5 px-3 font-semibold text-gray-800">{item.bag_sessions?.session_date}</td>
+                          <td className="py-1.5 px-3 font-semibold text-gray-800">{formatToDisplayDate(item.bag_sessions?.session_date)}</td>
                           <td className="py-1.5 px-3 text-gray-600">{item.bag_sessions?.title}</td>
                           <td className="py-1.5 px-3">
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded-full bg-gray-100 text-gray-700">
@@ -1794,7 +1814,7 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* MODAL 2: BULK IMPORT */}
+      {/* MODAL 2: BULK IMPORT (WITH TOTE TYPE) */}
       {isBulkImporting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-4 space-y-3">
@@ -1803,7 +1823,7 @@ export default function BagSessionManager() {
                 <h3 className="font-bold text-gray-900 text-xs">Bulk Import Manifest</h3>
                 <p className="text-[10px] text-gray-500">
                   {targetBgForImport
-                    ? `Assigning to BG Tracking ID: ${targetBgForImport}`
+                    ? `Assigning to ID: ${targetBgForImport}`
                     : `Session: ${sessionDetails?.title}`}
                 </p>
               </div>
@@ -1820,29 +1840,40 @@ export default function BagSessionManager() {
 
             <form onSubmit={handleBulkImport} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1.5">Select Bag Type</label>
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                <label className="block text-[11px] font-bold text-gray-700 mb-1.5">Select Bag / Tote Type</label>
+                <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
                     onClick={() => setSelectedBagType('tro')}
-                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       selectedBagType === 'tro'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 TRO Bags (RTO)</span>
+                    <span>📦 TRO Bag</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedBagType('missroute')}
-                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       selectedBagType === 'missroute'
                         ? 'bg-rose-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>⚠️ Missroute Bags</span>
+                    <span>⚠️ Missroute</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBagType('tote')}
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                      selectedBagType === 'tote'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>🗃️ Tote Bag</span>
                   </button>
                 </div>
               </div>
@@ -1853,12 +1884,12 @@ export default function BagSessionManager() {
                   rows={8}
                   value={rawBulkData}
                   onChange={(e) => setRawBulkData(e.target.value)}
-                  placeholder={`FMPR0948731050447182328516839ESURSURF-56565656SUR/SURFRemove\nFMPR0948731051447182328516839ESURSURF-56565657SUR/SURFRemove`}
+                  placeholder={`FMPR0948731050\tBAG10001\t535-GNL-379608\tSUR/SURF\nFMPR0948731051\tBAG10001\t535-GNL-379608\tSUR/SURF`}
                   className="mt-0.5 w-full text-[11px] font-mono border rounded p-2 focus:border-indigo-500 focus:outline-none"
                   required
                 />
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  💡 Duplicate shipments already inside the BG group will be automatically skipped with a warning.
+                  💡 Shipments imported under <b>Totes</b> will store all tracking IDs while displaying directly in the Tote ID email column.
                 </p>
               </div>
 
@@ -1877,12 +1908,14 @@ export default function BagSessionManager() {
                   type="submit"
                   disabled={submitting}
                   className={`px-3.5 py-1 text-white text-[11px] font-bold rounded shadow-2xs disabled:opacity-50 transition ${
-                    selectedBagType === 'missroute'
+                    selectedBagType === 'tote'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : selectedBagType === 'missroute'
                       ? 'bg-rose-600 hover:bg-rose-700'
                       : 'bg-blue-600 hover:bg-blue-700'
                   }`}
                 >
-                  {submitting ? 'Importing...' : `Import as ${selectedBagType === 'tro' ? 'TRO' : 'Missroute'}`}
+                  {submitting ? 'Importing...' : `Import as ${selectedBagType.toUpperCase()}`}
                 </button>
               </div>
             </form>
@@ -1890,13 +1923,13 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* NEW: MODAL 2.5 - MANUALLY CREATE SINGLE BAG ID WITH OPTIONAL TIDS */}
+      {/* MODAL 2.5: MANUALLY CREATE SINGLE BAG / TOTE ID */}
       {isManualBagModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
             <div className="flex justify-between items-center border-b pb-2">
               <div>
-                <h3 className="font-bold text-gray-900 text-xs">Add Single Bag ID</h3>
+                <h3 className="font-bold text-gray-900 text-xs">Add Single Bag / Tote ID</h3>
                 <p className="text-[10px] text-gray-500">Session: {sessionDetails?.title}</p>
               </div>
               <button
@@ -1910,11 +1943,11 @@ export default function BagSessionManager() {
             <form onSubmit={handleCreateManualBag} className="space-y-3 text-xs">
               <div>
                 <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                  BG Tracking ID <span className="text-red-500">*</span>
+                  Bag / Tote ID <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. ESURSURF-1919366 or ENCRNDC-2966378"
+                  placeholder="e.g. 535-GNL-379608 or ESURSURF-1919366"
                   value={manualBagForm.bg_tracking_id}
                   onChange={(e) => setManualBagForm({ ...manualBagForm, bg_tracking_id: e.target.value })}
                   className="w-full text-[11px] font-mono border border-gray-300 rounded p-1.5 focus:border-indigo-500 focus:outline-none"
@@ -1924,36 +1957,47 @@ export default function BagSessionManager() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">Select Bag Type</label>
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Select Type</label>
+                <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
                     onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'tro' })}
-                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       manualBagForm.bag_type === 'tro'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 TRO Bag (RTO)</span>
+                    <span>📦 TRO Bag</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'missroute' })}
-                    className={`py-1.5 px-3 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
                       manualBagForm.bag_type === 'missroute'
                         ? 'bg-rose-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>⚠️ Missroute Bag</span>
+                    <span>⚠️ Missroute</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'tote' })}
+                    className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
+                      manualBagForm.bag_type === 'tote'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>🗃️ Tote</span>
                   </button>
                 </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  Tracking IDs / TIDs (Optional - One per line / comma separated)
+                  Shipment Tracking IDs / TIDs (Optional - One per line)
                 </label>
                 <textarea
                   rows={5}
@@ -1963,7 +2007,7 @@ export default function BagSessionManager() {
                   className="w-full text-[11px] font-mono border border-gray-300 rounded p-2 focus:border-indigo-500 focus:outline-none"
                 />
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  You can leave this empty and add items one by one inside the session.
+                  You can leave this empty or add items one by one inside the session.
                 </p>
               </div>
 
@@ -1980,7 +2024,7 @@ export default function BagSessionManager() {
                   disabled={submitting || !manualBagForm.bg_tracking_id.trim()}
                   className="px-3.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded shadow-2xs disabled:opacity-50 transition"
                 >
-                  {submitting ? 'Creating Bag...' : 'Add Bag ID'}
+                  {submitting ? 'Creating...' : 'Add Bag / Tote'}
                 </button>
               </div>
             </form>
@@ -1997,19 +2041,21 @@ export default function BagSessionManager() {
                 <div className="flex items-center gap-1.5">
                   <span
                     className={`text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
-                      selectedBgGroup.bag_type === 'missroute'
+                      selectedBgGroup.bag_type === 'tote'
+                        ? 'bg-amber-100 text-amber-900 font-black'
+                        : selectedBgGroup.bag_type === 'missroute'
                         ? 'bg-rose-100 text-rose-800'
                         : 'bg-blue-100 text-blue-800'
                     }`}
                   >
-                    {selectedBgGroup.bag_type === 'missroute' ? 'Missroute Bag' : 'TRO Bag'}
+                    {selectedBgGroup.bag_type === 'tote' ? 'TOTE' : selectedBgGroup.bag_type === 'missroute' ? 'Missroute Bag' : 'TRO Bag'}
                   </span>
                   <h3 className="font-bold text-gray-900 text-xs">
-                    BG: <span className="font-mono text-gray-900 font-black">{selectedBgGroup.bg_tracking_id}</span>
+                    ID: <span className="font-mono text-gray-900 font-black">{selectedBgGroup.bg_tracking_id}</span>
                   </h3>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  {selectedBgGroup.sessionTitle} • {selectedBgGroup.sessionDate} •{' '}
+                  {selectedBgGroup.sessionTitle} • {formatToDisplayDate(selectedBgGroup.sessionDate)} •{' '}
                   <span className="font-semibold text-indigo-600">
                     {selectedBgGroup.items?.length || 0} Shipments
                   </span>
@@ -2048,7 +2094,7 @@ export default function BagSessionManager() {
             <div className="p-3 overflow-y-auto flex-1">
               {(!selectedBgGroup.items || selectedBgGroup.items.length === 0) ? (
                 <div className="p-6 text-center text-[11px] text-gray-400 italic">
-                  No tracking IDs in this BG group yet.
+                  No tracking IDs recorded in this {selectedBgGroup.bag_type === 'tote' ? 'tote' : 'bag'} yet.
                 </div>
               ) : (
                 <table className="w-full text-left text-[11px] border-collapse">
@@ -2119,11 +2165,11 @@ export default function BagSessionManager() {
                 <h3 className="font-bold text-sm flex items-center gap-2">
                   <span>✉️ Exact Styled Dispatch Mail Format</span>
                   <span className="text-[10px] bg-emerald-700 text-white px-2 py-0.5 rounded font-normal">
-                    {mailSessionTarget.session_date}
+                    {formatToDisplayDate(mailSessionTarget.session_date)}
                   </span>
                 </h3>
                 <p className="text-[11px] text-gray-400 mt-0.5">
-                  Color palette & white title headers. Ready to paste into Gmail or Excel.
+                  Proportionate column widths, full continuous table borders, and bounded Tote columns.
                 </p>
               </div>
               <button
@@ -2159,7 +2205,7 @@ export default function BagSessionManager() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-gray-500">
-                    TOTE IDs (One per line / comma separated)
+                    EXTRA TOTE IDs (One per line / comma separated)
                   </label>
                   <input
                     type="text"
@@ -2176,17 +2222,21 @@ export default function BagSessionManager() {
             <div className="p-4 overflow-auto flex-1 bg-white">
               <div ref={emailTableRef} style={{ fontFamily: 'Calibri, Arial, sans-serif', fontSize: '11px' }}>
                 {(() => {
-                  const bgList = mailSessionTarget.bgGroups || [];
-                  const toteList = mailToteIds
-                    ? mailToteIds
-                        .split(/[,\n]/)
-                        .map((t) => t.trim())
-                        .filter(Boolean)
+                  const allGroups = mailSessionTarget.bgGroups || [];
+                  
+                  // Separate standard bags from Tote bags
+                  const standardBagList = allGroups.filter((g) => g.bag_type !== 'tote');
+                  const sessionToteIds = allGroups.filter((g) => g.bag_type === 'tote').map((g) => g.bg_tracking_id);
+                  
+                  // Combine with manual extra tote inputs
+                  const manualTotes = mailToteIds
+                    ? mailToteIds.split(/[,\n]/).map((t) => t.trim()).filter(Boolean)
                     : [];
 
-                  const totalRows = Math.max(bgList.length, 1);
-                  const totalShipmentSum = mailSessionTarget.totalPackets || 0;
-                  const toteRowCount = Math.max(totalRows, 30);
+                  const combinedToteList = Array.from(new Set([...sessionToteIds, ...manualTotes]));
+
+                  const actualRowCount = Math.max(standardBagList.length, 1);
+                  const totalShipmentSum = standardBagList.reduce((sum, b) => sum + (b.items?.length || 0), 0);
 
                   return (
                     <table
@@ -2194,7 +2244,6 @@ export default function BagSessionManager() {
                         borderCollapse: 'collapse',
                         width: '100%',
                         textAlign: 'center',
-                        border: '1.5px solid #000000',
                         fontSize: '11px',
                         fontFamily: 'Calibri, Arial, sans-serif',
                       }}
@@ -2212,20 +2261,25 @@ export default function BagSessionManager() {
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '22%', color: '#FFFFFF' }}>BAG TRACKING ID</th>
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '7%', color: '#FFFFFF' }}>COUNT</th>
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '9%', color: '#FFFFFF' }}>TYPE</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '8%', backgroundColor: '#4B8B3B', color: '#FFFFFF' }}>TOTE ID</th>
+                          {/* SPACE GAP */}
+                          <th style={{ width: '4%', border: 'none', backgroundColor: 'transparent' }}></th>
+                          {/* TOTE ID HEADER */}
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '11%', backgroundColor: '#4B8B3B', color: '#FFFFFF' }}>TOTE ID</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {bgList.map((bg, idx) => {
-                          const isMissroute = bg.bag_type === 'missroute';
-                          const toteId = toteList[idx] || '';
+                        {Array.from({ length: actualRowCount }).map((_, idx) => {
+                          const bg = standardBagList[idx];
+                          const isMissroute = bg?.bag_type === 'missroute';
+                          const toteId = combinedToteList[idx] || '';
 
                           return (
-                            <tr key={bg.bg_tracking_id || idx} style={{ height: '22px' }}>
+                            <tr key={idx} style={{ height: '22px' }}>
                               {idx === 0 && (
                                 <>
+                                  {/* DATE (DD/MM/YYYY) */}
                                   <td
-                                    rowSpan={totalRows}
+                                    rowSpan={actualRowCount}
                                     style={{
                                       backgroundColor: '#FFF2CC',
                                       border: '1px solid #000000',
@@ -2234,11 +2288,12 @@ export default function BagSessionManager() {
                                       verticalAlign: 'middle',
                                     }}
                                   >
-                                    {mailSessionTarget.session_date}
+                                    {formatToDisplayDate(mailSessionTarget.session_date)}
                                   </td>
 
+                                  {/* SENT FROM */}
                                   <td
-                                    rowSpan={totalRows}
+                                    rowSpan={actualRowCount}
                                     style={{
                                       backgroundColor: '#D9EAD3',
                                       border: '1px solid #000000',
@@ -2251,8 +2306,9 @@ export default function BagSessionManager() {
                                     {mailSentFrom}
                                   </td>
 
+                                  {/* SENT TO */}
                                   <td
-                                    rowSpan={totalRows}
+                                    rowSpan={actualRowCount}
                                     style={{
                                       backgroundColor: '#FFF2CC',
                                       border: '1px solid #000000',
@@ -2264,8 +2320,9 @@ export default function BagSessionManager() {
                                     {mailSentTo}
                                   </td>
 
+                                  {/* BAG COUNT */}
                                   <td
-                                    rowSpan={totalRows}
+                                    rowSpan={actualRowCount}
                                     style={{
                                       backgroundColor: '#D9EAD3',
                                       border: '1px solid #000000',
@@ -2275,22 +2332,24 @@ export default function BagSessionManager() {
                                       fontSize: '13px',
                                     }}
                                   >
-                                    {bgList.length}
+                                    {standardBagList.length}
                                   </td>
                                 </>
                               )}
 
+                              {/* SL No */}
                               <td
                                 style={{
-                                  backgroundColor: '#FFF2CC',
+                                  backgroundColor: bg ? '#FFF2CC' : '#FFFFFF',
                                   border: '1px solid #000000',
                                   fontWeight: 'bold',
                                   color: '#000000',
                                 }}
                               >
-                                {idx + 1}
+                                {bg ? idx + 1 : ''}
                               </td>
 
+                              {/* BAG TRACKING ID */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2301,9 +2360,10 @@ export default function BagSessionManager() {
                                   backgroundColor: '#FFFFFF',
                                 }}
                               >
-                                {bg.bg_tracking_id}
+                                {bg?.bg_tracking_id || ''}
                               </td>
 
+                              {/* COUNT */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2312,21 +2372,30 @@ export default function BagSessionManager() {
                                   backgroundColor: '#FFFFFF',
                                 }}
                               >
-                                {bg.items.length}
+                                {bg ? bg.items.length : ''}
                               </td>
 
+                              {/* TYPE */}
                               <td
                                 style={{
-                                  backgroundColor: isMissroute ? '#C9DAF8' : '#F4CCCC',
+                                  backgroundColor: bg
+                                    ? isMissroute
+                                      ? '#C9DAF8'
+                                      : '#F4CCCC'
+                                    : '#FFFFFF',
                                   border: '1px solid #000000',
                                   fontWeight: 'bold',
                                   fontStyle: 'italic',
-                                  color: isMissroute ? '#1155CC' : '#990000',
+                                  color: bg ? (isMissroute ? '#1155CC' : '#990000') : '#000000',
                                 }}
                               >
-                                {isMissroute ? 'MISS ROUTE' : 'RTO'}
+                                {bg ? (isMissroute ? 'MISS ROUTE' : 'RTO') : ''}
                               </td>
 
+                              {/* SPACE GAP */}
+                              <td style={{ border: 'none', backgroundColor: 'transparent' }}></td>
+
+                              {/* TOTE ID */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2342,24 +2411,8 @@ export default function BagSessionManager() {
                           );
                         })}
 
-                        {toteList.slice(totalRows, toteRowCount).map((toteId, extraIdx) => (
-                          <tr key={`extra-tote-${extraIdx}`} style={{ height: '22px' }}>
-                            <td colSpan={8} style={{ border: 'none', backgroundColor: 'transparent' }}></td>
-                            <td
-                              style={{
-                                border: '1px solid #000000',
-                                fontWeight: 'bold',
-                                fontFamily: 'Arial, sans-serif',
-                                backgroundColor: '#FFFFFF',
-                                color: '#000000',
-                              }}
-                            >
-                              {toteId}
-                            </td>
-                          </tr>
-                        ))}
-
-                        <tr style={{ height: '22px' }}>
+                        {/* FULLY ALIGNED CLOSED 8-COLUMN MAIN SUMMARY ROW */}
+                        <tr style={{ height: '24px' }}>
                           <td colSpan={4} style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
                           <td colSpan={2} style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
                           <td
@@ -2373,7 +2426,9 @@ export default function BagSessionManager() {
                           >
                             {totalShipmentSum}
                           </td>
-                          <td colSpan={2} style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
+                          <td style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
+                          <td style={{ border: 'none', backgroundColor: 'transparent' }}></td>
+                          <td style={{ border: 'none', backgroundColor: 'transparent' }}></td>
                         </tr>
                       </tbody>
                     </table>
@@ -2384,7 +2439,9 @@ export default function BagSessionManager() {
 
             <div className="px-4 py-2.5 bg-gray-100 border-t flex justify-between items-center">
               <span className="text-[11px] text-gray-600">
-                Bags: <b>{mailSessionTarget.bgGroups?.length || 0}</b> | Shipments: <b>{mailSessionTarget.totalPackets || 0}</b>
+                Standard Bags: <b>{(mailSessionTarget.bgGroups || []).filter(g => g.bag_type !== 'tote').length}</b> | 
+                Totes: <b>{(mailSessionTarget.bgGroups || []).filter(g => g.bag_type === 'tote').length}</b> | 
+                Shipments: <b>{mailSessionTarget.totalPackets || 0}</b>
               </span>
               <div className="flex gap-2">
                 <button

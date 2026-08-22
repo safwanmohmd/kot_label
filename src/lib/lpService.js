@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
 /**
- * Fetch all records strictly from lp_tracker
+ * Fetch all records from lp_tracker
  */
 export async function fetchLpRecords() {
   if (!isSupabaseConfigured) return [];
@@ -35,7 +35,7 @@ export async function fetchLpRecords() {
 }
 
 /**
- * Fetch records strictly from loss_ledger
+ * Fetch records from loss_ledger
  */
 export async function fetchLossLedgerRecords() {
   if (!isSupabaseConfigured) return [];
@@ -54,7 +54,7 @@ export async function fetchLossLedgerRecords() {
 }
 
 /**
- * Create or Upsert a record directly into lp_tracker
+ * Create or Upsert a record in lp_tracker
  */
 export async function createLpRecord(input) {
   if (!isSupabaseConfigured) {
@@ -66,11 +66,12 @@ export async function createLpRecord(input) {
     };
   }
   
+  const isLossType = input.status === 'ALREADY MARKED LOSS' || input.status === 'MARK LOSS PENDING';
   const payload = {
     tracking_id: input.tracking_id.toUpperCase().trim(),
     wishmaster_name: input.wishmaster_name,
     aging_days: input.aging_days,
-    priority: input.status === 'ALREADY MARKED LOSS' ? 'CRITICAL' : input.priority,
+    priority: isLossType ? 'CRITICAL' : input.priority,
     status: input.status,
     details: input.details || null, 
     resolved_at: input.resolved_at || (input.status === 'CLEARING TODAY' || input.status === 'ALREADY MARKED LOSS' ? new Date().toISOString() : null)
@@ -108,6 +109,75 @@ export async function updateLpRecord(id, updates, isLossLedger = false) {
 }
 
 /**
+ * Push an item from lp_tracker into loss_ledger and update lp_tracker to 'ALREADY MARKED LOSS'
+ */
+export async function confirmAndPushLossLedger(record) {
+  if (!isSupabaseConfigured) return;
+  const timestamp = new Date().toISOString();
+
+  const lossPayload = {
+    tracking_id: record.tracking_id.toUpperCase().trim(),
+    wishmaster_name: record.wishmaster_name,
+    aging_days: record.aging_days || 1,
+    priority: 'CRITICAL',
+    status: 'LOSS',
+    details: record.details || 'Marked and confirmed loss from tracker',
+    resolved_at: timestamp
+  };
+
+  // 1. Insert into loss_ledger
+  const { error: insertErr } = await supabase
+    .from('loss_ledger')
+    .upsert([lossPayload], { onConflict: 'tracking_id' });
+
+  if (insertErr) throw insertErr;
+
+  // 2. Set status in lp_tracker to 'ALREADY MARKED LOSS'
+  const { error: updateErr } = await supabase
+    .from('lp_tracker')
+    .update({ 
+      status: 'ALREADY MARKED LOSS',
+      priority: 'CRITICAL',
+      resolved_at: timestamp
+    })
+    .eq('id', record.id);
+
+  if (updateErr) throw updateErr;
+}
+
+/**
+ * Reopen a loss record back to lp_tracker
+ */
+export async function reopenLossToTracker(record) {
+  if (!isSupabaseConfigured) return;
+
+  const trackerPayload = {
+    tracking_id: record.tracking_id.toUpperCase().trim(),
+    wishmaster_name: record.wishmaster_name,
+    aging_days: record.aging_days || 1,
+    priority: 'HIGH',
+    status: 'NOT FOUND',
+    details: record.details || null,
+    resolved_at: null
+  };
+
+  // 1. Update in lp_tracker
+  const { error: insertErr } = await supabase
+    .from('lp_tracker')
+    .upsert([trackerPayload], { onConflict: 'tracking_id' });
+
+  if (insertErr) throw insertErr;
+
+  // 2. Delete from loss_ledger
+  const { error: delErr } = await supabase
+    .from('loss_ledger')
+    .delete()
+    .eq('id', record.id);
+
+  if (delErr) throw delErr;
+}
+
+/**
  * Bulk import records directly into lp_tracker
  */
 export async function createLpRecordsBulk(recordsArray) {
@@ -123,11 +193,12 @@ export async function createLpRecordsBulk(recordsArray) {
   const uniquePayloadMap = new Map();
   recordsArray.forEach(record => {
     const cleanKey = record.tracking_id.trim().toUpperCase();
+    const isLossType = record.status === 'ALREADY MARKED LOSS' || record.status === 'MARK LOSS PENDING';
     uniquePayloadMap.set(cleanKey, {
       tracking_id: cleanKey,
       wishmaster_name: record.wishmaster_name,
       aging_days: record.aging_days,
-      priority: record.status === 'ALREADY MARKED LOSS' ? 'CRITICAL' : record.priority,
+      priority: isLossType ? 'CRITICAL' : record.priority,
       status: record.status,
       details: record.details ?? null, 
       resolved_at: record.resolved_at || (record.status === 'CLEARING TODAY' || record.status === 'ALREADY MARKED LOSS' ? new Date().toISOString() : null)
@@ -171,7 +242,7 @@ export async function deleteLpRecord(id, isLossLedger = false) {
 
 /**
  * Day Reset: Clears lp_tracker table completely.
- * loss_ledger is 100% untouched.
+ * loss_ledger is untouched.
  */
 export async function clearAllLpRecords() {
   if (!isSupabaseConfigured) return true;
@@ -220,16 +291,23 @@ export async function updateManualDelivery(id, updates) {
   return data?.[0] ?? null;
 }
 
+/**
+ * Syncs a manual delivery record into the Loss Ledger.
+ * Sets the Wishmaster name in loss_ledger to the manual delivery's notes.
+ */
 export async function syncManualDeliveryToLpLoss(deliveryItem) {
   if (!isSupabaseConfigured) return true;
   
+  // Set wishmaster_name to the manual delivery notes if present
+  const assignedWm = deliveryItem.notes?.trim() || "MANUAL HUB ORDER (UNRESOLVED)";
+
   const lpPayload = {
     tracking_id: deliveryItem.tracking_id.toUpperCase().trim(),
-    wishmaster_name: "MANUAL HUB ORDER (UNRESOLVED)",
+    wishmaster_name: assignedWm,
     aging_days: 1,
     priority: "CRITICAL",
     status: "LOSS",
-    details: `Source: Counter Pickup. Customer Phone: ${deliveryItem.customer_phone}. Notes: ${deliveryItem.notes || 'None provided'}`,
+    details: `Source: Counter Pickup. Customer Phone: ${deliveryItem.customer_phone || 'N/A'}. Notes: ${deliveryItem.notes || 'None provided'}`,
     resolved_at: new Date().toISOString()
   };
 

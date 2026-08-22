@@ -21,7 +21,7 @@ import {
 import { useToast } from '../lib/useToast.jsx';
 import { fetchVendors } from '../lib/vendorService.js';
 import { supabase } from '../lib/supabase.js';
-import { createLpRecord, fetchLossLedgerRecords } from '../lib/lpService.js';
+import { fetchLossLedgerRecords } from '../lib/lpService.js';
 
 export function WmLossEmailGenerator() {
   const toast = useToast();
@@ -283,21 +283,32 @@ export function WmLossEmailGenerator() {
       const timestamp = new Date().toISOString();
       const dateStr = timestamp.split('T')[0];
 
-      // 1. Commit / Upsert into standalone loss_ledger
-      for (const row of validRows) {
+      // 1. Direct Batch Upsert into dedicated loss_ledger with WM Name explicitly mapped
+      const lossLedgerPayload = validRows.map(row => {
         const cleanTid = row.trackingId.trim().toUpperCase();
-        await createLpRecord({
+        const assignedWmName = row.wm_name?.trim() || 'Vendor Courier';
+        return {
           tracking_id: cleanTid,
-          wishmaster_name: row.wm_name?.trim() || 'Vendor Courier',
+          wishmaster_name: assignedWmName,
           aging_days: 1,
           priority: 'CRITICAL',
           status: 'LOSS',
-          details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
+          details: `Loss Mailed: ${assignedWmName} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'} | Subject: ${subjectText || 'Loss Report'}`,
           resolved_at: timestamp
-        });
-      }
+        };
+      });
 
-      // 2. Upsert into wm_loss_records
+      const { error: ledgerError } = await supabase
+        .from('loss_ledger')
+        .upsert(lossLedgerPayload, { onConflict: 'tracking_id' });
+
+      if (ledgerError) throw ledgerError;
+
+      // 2. Clear from lp_tracker so active trackers do not hold duplicate loss items
+      const tidsList = validRows.map(r => r.trackingId.trim().toUpperCase());
+      await supabase.from('lp_tracker').delete().in('tracking_id', tidsList);
+
+      // 3. Upsert into wm_loss_records
       for (const row of validRows) {
         const cleanTid = row.trackingId.trim().toUpperCase();
         await supabase
@@ -322,7 +333,7 @@ export function WmLossEmailGenerator() {
         console.warn('wm_loss_records write notice:', errDb);
       }
 
-      // 3. Log batch entry into wm_loss_emails
+      // 4. Log batch entry into wm_loss_emails
       try {
         const trackingList = validRows.map(r => r.trackingId.trim().toUpperCase());
         await supabase.from('wm_loss_emails').insert([
@@ -340,7 +351,7 @@ export function WmLossEmailGenerator() {
         console.warn('wm_loss_emails write notice:', errEmailDb);
       }
 
-      toast(`Successfully saved and confirmed ${validRows.length} loss record(s) into Loss Ledger!`, 'success');
+      toast(`Successfully saved ${validRows.length} record(s) into Loss Ledger with Wishmaster assignments!`, 'success');
       setDuplicateWarningModal({ isOpen: false, duplicates: [], pendingValidRows: [] });
     } catch (err) {
       console.error('Save to DB error:', err);
@@ -622,7 +633,7 @@ export function WmLossEmailGenerator() {
                   onClick={handleSaveAndConfirmToDb}
                   disabled={isSavingDb}
                   className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded transition-colors shadow-2xs disabled:opacity-50"
-                  title="Store all row tracking IDs directly into the Loss Database"
+                  title="Store all row tracking IDs and Wishmaster names directly into the Loss Ledger"
                 >
                   {isSavingDb ? (
                     <RefreshCw className="h-3 w-3 animate-spin" />
