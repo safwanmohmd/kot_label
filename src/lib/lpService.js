@@ -1,5 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
+/**
+ * Fetch all records strictly from lp_tracker
+ */
 export async function fetchLpRecords() {
   if (!isSupabaseConfigured) return [];
   try {
@@ -31,6 +34,28 @@ export async function fetchLpRecords() {
   }
 }
 
+/**
+ * Fetch records strictly from loss_ledger
+ */
+export async function fetchLossLedgerRecords() {
+  if (!isSupabaseConfigured) return [];
+  try {
+    const { data, error } = await supabase
+      .from('loss_ledger')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data ?? [];
+  } catch (err) {
+    console.error("fetchLossLedgerRecords error:", err);
+    throw err;
+  }
+}
+
+/**
+ * Create or Upsert a record directly into lp_tracker
+ */
 export async function createLpRecord(input) {
   if (!isSupabaseConfigured) {
     return {
@@ -42,18 +67,18 @@ export async function createLpRecord(input) {
   }
   
   const payload = {
-    tracking_id: input.tracking_id,
+    tracking_id: input.tracking_id.toUpperCase().trim(),
     wishmaster_name: input.wishmaster_name,
     aging_days: input.aging_days,
-    priority: input.priority,
+    priority: input.status === 'ALREADY MARKED LOSS' ? 'CRITICAL' : input.priority,
     status: input.status,
     details: input.details || null, 
-    resolved_at: input.resolved_at || null
+    resolved_at: input.resolved_at || (input.status === 'CLEARING TODAY' || input.status === 'ALREADY MARKED LOSS' ? new Date().toISOString() : null)
   };
 
   const { data, error } = await supabase
     .from('lp_tracker')
-    .insert([payload])
+    .upsert([payload], { onConflict: 'tracking_id' })
     .select()
     .single();
 
@@ -62,24 +87,14 @@ export async function createLpRecord(input) {
 }
 
 /**
- * Individual Row Purge: Permanently drops a single target record 
- * from the table when its specific delete button is clicked.
+ * Update an existing record in lp_tracker or loss_ledger
  */
-export async function deleteLpRecord(id) {
-  if (!isSupabaseConfigured) return;
-  
-  const { error } = await supabase
-    .from('lp_tracker')
-    .delete()
-    .eq('id', id); // Targeted single record matching
-    
-  if (error) throw error;
-}
-export async function updateLpRecord(id, updates) {
+export async function updateLpRecord(id, updates, isLossLedger = false) {
   if (!isSupabaseConfigured) return null;
   try {
+    const targetTable = isLossLedger ? 'loss_ledger' : 'lp_tracker';
     const { data, error } = await supabase
-      .from('lp_tracker')
+      .from(targetTable)
       .update(updates)
       .eq('id', id)
       .select();
@@ -87,11 +102,14 @@ export async function updateLpRecord(id, updates) {
     if (error) throw error;
     return data?.[0] ?? null;
   } catch (err) {
-    console.error(`Error updating LP record ${id}:`, err);
+    console.error(`Error updating record ${id}:`, err);
     throw err;
   }
 }
 
+/**
+ * Bulk import records directly into lp_tracker
+ */
 export async function createLpRecordsBulk(recordsArray) {
   if (!isSupabaseConfigured) {
     return recordsArray.map(r => ({
@@ -102,28 +120,73 @@ export async function createLpRecordsBulk(recordsArray) {
     }));
   }
 
-  const sanitizedRecords = recordsArray.map(record => ({
-    tracking_id: record.tracking_id,
-    wishmaster_name: record.wishmaster_name,
-    aging_days: record.aging_days,
-    priority: record.priority,
-    status: record.status,
-    details: record.details ?? null, 
-    resolved_at: record.resolved_at || null
-  }));
+  const uniquePayloadMap = new Map();
+  recordsArray.forEach(record => {
+    const cleanKey = record.tracking_id.trim().toUpperCase();
+    uniquePayloadMap.set(cleanKey, {
+      tracking_id: cleanKey,
+      wishmaster_name: record.wishmaster_name,
+      aging_days: record.aging_days,
+      priority: record.status === 'ALREADY MARKED LOSS' ? 'CRITICAL' : record.priority,
+      status: record.status,
+      details: record.details ?? null, 
+      resolved_at: record.resolved_at || (record.status === 'CLEARING TODAY' || record.status === 'ALREADY MARKED LOSS' ? new Date().toISOString() : null)
+    });
+  });
 
-  const { data, error } = await supabase
-    .from('lp_tracker')
-    .insert(sanitizedRecords)
-    .select();
+  const sanitizedRecords = Array.from(uniquePayloadMap.values());
+  if (sanitizedRecords.length === 0) return [];
 
-  if (error) throw error;
-  return data;
+  const chunkSize = 150;
+  let allInserted = [];
+
+  for (let i = 0; i < sanitizedRecords.length; i += chunkSize) {
+    const chunk = sanitizedRecords.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from('lp_tracker')
+      .upsert(chunk, { onConflict: 'tracking_id' })
+      .select();
+
+    if (error) throw error;
+    if (data) allInserted = allInserted.concat(data);
+  }
+
+  return allInserted;
 }
 
-/* ==========================================================================
-   MANUAL HUB OVER-THE-COUNTER DELIVERY WORKSPACE METHODS
-   ========================================================================== */
+/**
+ * Delete a single record from its table
+ */
+export async function deleteLpRecord(id, isLossLedger = false) {
+  if (!isSupabaseConfigured) return;
+  const targetTable = isLossLedger ? 'loss_ledger' : 'lp_tracker';
+  
+  const { error } = await supabase
+    .from(targetTable)
+    .delete()
+    .eq('id', id);
+    
+  if (error) throw error;
+}
+
+/**
+ * Day Reset: Clears lp_tracker table completely.
+ * loss_ledger is 100% untouched.
+ */
+export async function clearAllLpRecords() {
+  if (!isSupabaseConfigured) return true;
+  
+  const { error } = await supabase
+    .from('lp_tracker')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+
+  if (error) {
+    console.error("Failed to reset active LP tracker workspace:", error.message);
+    throw error;
+  }
+  return true;
+}
 
 export async function fetchManualDeliveries() {
   if (!isSupabaseConfigured) return [];
@@ -157,16 +220,11 @@ export async function updateManualDelivery(id, updates) {
   return data?.[0] ?? null;
 }
 
-/**
- * Syncs a cancelled manual pickup row straight into the main LP Tracker table as a Shipment Loss
- * FIXED: Uses .upsert() to gracefully overwrite constraints and handle 409 conflict responses.
- */
 export async function syncManualDeliveryToLpLoss(deliveryItem) {
   if (!isSupabaseConfigured) return true;
   
-  // 1. Build an official row payload matching the LP architecture
   const lpPayload = {
-    tracking_id: deliveryItem.tracking_id.toUpperCase(),
+    tracking_id: deliveryItem.tracking_id.toUpperCase().trim(),
     wishmaster_name: "MANUAL HUB ORDER (UNRESOLVED)",
     aging_days: 1,
     priority: "CRITICAL",
@@ -175,17 +233,12 @@ export async function syncManualDeliveryToLpLoss(deliveryItem) {
     resolved_at: new Date().toISOString()
   };
 
-  // 2. Upsert transaction block into lp_tracker table to handle duplicate tracking entries cleanly
   const { error: upsertError } = await supabase
-    .from('lp_tracker')
-    .upsert(lpPayload, {
-      onConflict: 'tracking_id',
-      ignoreDuplicates: false
-    });
+    .from('loss_ledger')
+    .upsert(lpPayload, { onConflict: 'tracking_id' });
 
   if (upsertError) throw upsertError;
 
-  // 3. Update status flags inside origin record so it locks out multi-sync triggers
   const { data: updatedDelivery, error: updateError } = await supabase
     .from('manual_deliveries')
     .update({ 
@@ -199,32 +252,6 @@ export async function syncManualDeliveryToLpLoss(deliveryItem) {
   return updatedDelivery?.[0] ?? null;
 }
 
-/**
- * Destructive Operation: Flushes the main LP Tracker logs for a clean day's run
- */
-/**
- * Safe Operation: Flushes the main LP Tracker logs for standard entries
- * PRESERVES manual counter overruns permanently unless individually purged.
- */
-export async function clearAllLpRecords() {
-  if (!isSupabaseConfigured) return true;
-  
-  const { error } = await supabase
-    .from('lp_tracker')
-    .delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000') // Safe catch-all UUID filter
-    .neq('wishmaster_name', 'MANUAL HUB ORDER (UNRESOLVED)'); // 🔥 NEW: Protects synced loss entries from bulk clear
-
-  if (error) {
-    console.error("Failed to safely flush standard LP workspace:", error.message);
-    throw error;
-  }
-  return true;
-}
-
-/**
- * Deletes a manual delivery record by its primary ID
- */
 export async function deleteManualDelivery(id) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase

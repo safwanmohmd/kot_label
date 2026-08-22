@@ -21,7 +21,7 @@ import {
 import { useToast } from '../lib/useToast.jsx';
 import { fetchVendors } from '../lib/vendorService.js';
 import { supabase } from '../lib/supabase.js';
-import { createLpRecord, updateLpRecord, fetchLpRecords } from '../lib/lpService.js';
+import { createLpRecord, fetchLossLedgerRecords } from '../lib/lpService.js';
 
 export function WmLossEmailGenerator() {
   const toast = useToast();
@@ -276,48 +276,25 @@ export function WmLossEmailGenerator() {
     });
   };
 
-  // Perform database write and upsert operations
+  // Perform database write and upsert operations directly into loss_ledger
   const executeDatabaseSave = async (validRows) => {
     setIsSavingDb(true);
     try {
       const timestamp = new Date().toISOString();
       const dateStr = timestamp.split('T')[0];
 
-      // 1. Commit / Update LP Tracker
-      let existingLp = [];
-      try {
-        if (typeof fetchLpRecords === 'function') {
-          existingLp = await fetchLpRecords();
-        }
-      } catch (e) {
-        console.warn(e);
-      }
-
+      // 1. Commit / Upsert into standalone loss_ledger
       for (const row of validRows) {
         const cleanTid = row.trackingId.trim().toUpperCase();
-        const foundRec = existingLp.find(
-          r => (r.tracking_id || '').toUpperCase() === cleanTid
-        );
-
-        if (foundRec && typeof updateLpRecord === 'function') {
-          await updateLpRecord(foundRec.id, {
-            wishmaster_name: row.wm_name?.trim() || foundRec.wishmaster_name || 'Vendor Courier',
-            status: 'LOSS',
-            priority: 'CRITICAL',
-            details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
-            resolved_at: timestamp
-          });
-        } else if (typeof createLpRecord === 'function') {
-          await createLpRecord({
-            tracking_id: cleanTid,
-            wishmaster_name: row.wm_name?.trim() || 'Vendor Courier',
-            aging_days: 1,
-            priority: 'CRITICAL',
-            status: 'LOSS',
-            details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
-            resolved_at: timestamp
-          });
-        }
+        await createLpRecord({
+          tracking_id: cleanTid,
+          wishmaster_name: row.wm_name?.trim() || 'Vendor Courier',
+          aging_days: 1,
+          priority: 'CRITICAL',
+          status: 'LOSS',
+          details: `Loss Mailed: ${row.wm_name || 'WM'} (ID: ${row.vendor_id || 'N/A'}) | Price: ${row.price || 'N/A'}`,
+          resolved_at: timestamp
+        });
       }
 
       // 2. Upsert into wm_loss_records
@@ -363,7 +340,7 @@ export function WmLossEmailGenerator() {
         console.warn('wm_loss_emails write notice:', errEmailDb);
       }
 
-      toast(`Successfully saved and confirmed ${validRows.length} loss record(s) into database!`, 'success');
+      toast(`Successfully saved and confirmed ${validRows.length} loss record(s) into Loss Ledger!`, 'success');
       setDuplicateWarningModal({ isOpen: false, duplicates: [], pendingValidRows: [] });
     } catch (err) {
       console.error('Save to DB error:', err);
@@ -385,11 +362,11 @@ export function WmLossEmailGenerator() {
     try {
       const incomingTids = validRows.map(r => r.trackingId.trim().toUpperCase());
 
-      // 1. Check in LP Tracker records
-      let existingLp = [];
+      // 1. Check in dedicated loss_ledger table
+      let existingLossLedger = [];
       try {
-        if (typeof fetchLpRecords === 'function') {
-          existingLp = await fetchLpRecords();
+        if (typeof fetchLossLedgerRecords === 'function') {
+          existingLossLedger = await fetchLossLedgerRecords();
         }
       } catch (e) {
         console.warn(e);
@@ -411,15 +388,15 @@ export function WmLossEmailGenerator() {
 
       validRows.forEach(row => {
         const cleanTid = row.trackingId.trim().toUpperCase();
-        const lpMatch = existingLp.find(
-          r => (r.tracking_id || '').toUpperCase() === cleanTid && (r.status || '').toUpperCase() === 'LOSS'
+        const ledgerMatch = existingLossLedger.find(
+          r => (r.tracking_id || '').toUpperCase() === cleanTid
         );
         const wmMatch = existingLossRecords.find(
           r => (r.tracking_id || '').toUpperCase() === cleanTid
         );
 
-        if (lpMatch || wmMatch) {
-          const oldWmName = lpMatch?.wishmaster_name || wmMatch?.wm_name || 'Another Wishmaster';
+        if (ledgerMatch || wmMatch) {
+          const oldWmName = ledgerMatch?.wishmaster_name || wmMatch?.wm_name || 'Another Wishmaster';
           duplicateList.push({
             trackingId: cleanTid,
             oldWmName,
@@ -450,7 +427,6 @@ export function WmLossEmailGenerator() {
 
   return (
     <div className="w-full p-3 space-y-4 text-xs bg-ink-50/20 min-h-screen">
-      
       {/* HEADER CONTROLS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-ink-100 pb-2 bg-white p-3 rounded-lg shadow-2xs">
         <div>
@@ -498,11 +474,9 @@ export function WmLossEmailGenerator() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 items-start w-full">
-        
         {/* LEFT CONFIGURATION PRESET TAB */}
         {showPresetTab && (
           <div className="w-full lg:w-[360px] shrink-0 card p-3.5 border-2 border-amber-300 bg-white shadow-md rounded-lg space-y-4 animate-in fade-in slide-in-from-left-2 duration-200">
-            
             <div className="flex items-center justify-between border-b pb-1.5">
               <h3 className="text-[10px] font-black uppercase tracking-wider text-ink-700 flex items-center gap-1">
                 <Settings className="h-3 w-3 text-amber-500" /> Live Preset Customizer
@@ -833,7 +807,6 @@ export function WmLossEmailGenerator() {
 
           </div>
         </div>
-
       </div>
 
       {/* DUPLICATE OVERRIDE CONFIRMATION MODAL */}
@@ -847,7 +820,7 @@ export function WmLossEmailGenerator() {
 
             <div className="space-y-2">
               <p className="text-xs text-gray-600">
-                The following Tracking ID(s) are already marked as <strong>LOSS</strong> under another Wishmaster:
+                The following Tracking ID(s) are already marked as <strong>LOSS</strong> in the Loss Ledger under another Wishmaster:
               </p>
 
               <div className="max-h-40 overflow-y-auto space-y-1.5 bg-amber-50/60 p-2.5 rounded-lg border border-amber-200">

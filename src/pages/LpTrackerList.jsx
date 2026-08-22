@@ -24,49 +24,47 @@ import {
   Eye,
   Info,
   Save,
-  Archive
+  Archive,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '../lib/useToast.jsx';
 import { 
   fetchLpRecords, 
+  fetchLossLedgerRecords,
   createLpRecord, 
   deleteLpRecord, 
   updateLpRecord, 
   createLpRecordsBulk,
-  clearAllLpRecords 
+  clearAllLpRecords
 } from '../lib/lpService.js';
+import { supabase } from '../lib/supabase.js';
 
 export function LpTrackerList() {
   const toast = useToast();
 
-  // --- COMPONENT STATES ---
-  const [records, setRecords] = useState([]);
+  // Component States
+  const [activeRecords, setActiveRecords] = useState([]);
+  const [lossRecords, setLossRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entryMode, setEntryMode] = useState('single');
   const [sortDirection, setSortDirection] = useState('auto'); 
   
-  // View Swap State: 'active' or 'loss'
+  // View Mode: 'active' (lp_tracker table) | 'loss' (loss_ledger table)
   const [viewMode, setViewMode] = useState('active');
 
-  // Track workspace reset timeline locally to manage active view separation
-  const [lastResetTime, setLastResetTime] = useState(() => {
-    return localStorage.getItem('lp_workspace_last_reset') || new Date(0).toISOString();
-  });
-
-  // Inline Wishmaster Editing Tracking States
+  // Inline Editing
   const [editingRecordId, setEditingRecordId] = useState(null);
   const [editingWmName, setEditingWmName] = useState('');
   const [isUpdatingWm, setIsUpdatingWm] = useState(false);
 
-  // Quick View Inspection Modal State
+  // Inspector Modal
   const [inspectingItem, setInspectingItem] = useState(null);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [editedDetailsText, setEditedDetailsText] = useState('');
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
-  // Day Reset Loading State
   const [isResetting, setIsResetting] = useState(false);
 
   // Single Form Fields
@@ -79,10 +77,10 @@ export function LpTrackerList() {
   // Bulk Form Fields
   const [bulkText, setBulkText] = useState('');
   const [bulkWishmaster, setBulkWishmaster] = useState('');
-  
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const STATUS_OPTIONS = ['NOT FOUND', 'CLEARING TODAY', 'LOSS'];
+  const STATUS_OPTIONS_ACTIVE = ['NOT FOUND', 'CLEARING TODAY', 'ALREADY MARKED LOSS'];
+  const STATUS_OPTIONS_LOSS = ['LOSS'];
 
   const PRIORITY_RANK = {
     'CRITICAL': 4,
@@ -94,10 +92,14 @@ export function LpTrackerList() {
   async function loadData() {
     setLoading(true);
     try {
-      const data = await fetchLpRecords();
-      setRecords(data);
+      const [trackerData, ledgerData] = await Promise.all([
+        fetchLpRecords(),
+        fetchLossLedgerRecords()
+      ]);
+      setActiveRecords(trackerData);
+      setLossRecords(ledgerData);
     } catch (err) {
-      toast('Error loading operational Loss Prevention records.', 'error');
+      toast('Error loading operational records.', 'error');
     } finally {
       setLoading(false);
     }
@@ -126,13 +128,6 @@ export function LpTrackerList() {
     return 'LOW';
   }
 
-  function isOlderThanTwoDays(isoString) {
-    if (!isoString) return false;
-    const resolvedDate = new Date(isoString);
-    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000;
-    return (new Date() - resolvedDate) > twoDaysInMs;
-  }
-
   function openInspector(item) {
     setInspectingItem(item);
     setEditedDetailsText(item.details || '');
@@ -143,8 +138,15 @@ export function LpTrackerList() {
     setIsSavingDetails(true);
     try {
       const updatedValue = editedDetailsText.trim() || null;
-      setRecords(prev => prev.map(r => r.id === inspectingItem.id ? { ...r, details: updatedValue } : r));
-      await updateLpRecord(inspectingItem.id, { details: updatedValue });
+      const isLoss = viewMode === 'loss';
+      
+      if (isLoss) {
+        setLossRecords(prev => prev.map(r => r.id === inspectingItem.id ? { ...r, details: updatedValue } : r));
+      } else {
+        setActiveRecords(prev => prev.map(r => r.id === inspectingItem.id ? { ...r, details: updatedValue } : r));
+      }
+
+      await updateLpRecord(inspectingItem.id, { details: updatedValue }, isLoss);
       setInspectingItem(prev => ({ ...prev, details: updatedValue }));
       setIsEditingDetails(false);
       toast('Shipment details updated successfully.', 'success');
@@ -157,7 +159,7 @@ export function LpTrackerList() {
 
   async function sweepMissingRecords(incomingTrackingIds) {
     const upperIncomingIds = incomingTrackingIds.map(id => id.trim().toUpperCase());
-    const missingActiveRecords = records.filter(rec => 
+    const missingActiveRecords = activeRecords.filter(rec => 
       rec.status === 'NOT FOUND' && 
       !upperIncomingIds.includes(rec.tracking_id.toUpperCase())
     );
@@ -173,7 +175,7 @@ export function LpTrackerList() {
           await updateLpRecord(rec.id, { 
             status: 'CLEARING TODAY', 
             resolved_at: timestamp 
-          });
+          }, false);
           sweepSuccessCount++;
         } catch (err) {
           console.error(`Absence sweep failed auto-clearing ID: ${rec.tracking_id}`, err);
@@ -184,27 +186,17 @@ export function LpTrackerList() {
     return sweepSuccessCount;
   }
 
-  // UPDATED: Now drops recent LOSS elements from the active table view too, while permanently safeguarding them inside the ledger tab memory
   async function handleResetDayArchive() {
-    const doubleCheckMessage = `🚨 WARNING: You are resetting the daily tracking workspace.\n\nAll trackers shown in the Active table (including recent Cleared and Loss rows) will be cleared from this view.\n\nAll permanent LOSS entries will remain perfectly intact inside the Loss Ledger. Proceed?`;
-    if (!window.confirm(doubleCheckMessage)) return;
+    const confirmMsg = `🚨 WARNING: You are resetting the active tracking workspace (lp_tracker table).\n\nAll active trackers will be cleared.\n\nThe dedicated Loss Ledger will remain completely untouched. Proceed?`;
+    if (!window.confirm(confirmMsg)) return;
 
     setIsResetting(true);
     try {
       await clearAllLpRecords();
-      
-      // Update local storage timeline and component state so old tracker entries clear immediately
-      const newResetTimestamp = new Date().toISOString();
-      localStorage.setItem('lp_workspace_last_reset', newResetTimestamp);
-      setLastResetTime(newResetTimestamp);
-
-      // Retain ALL loss records in local state so the Loss Ledger is unaffected
-      const totalSavedLossRecords = records.filter(rec => rec.status === 'LOSS');
-      setRecords(totalSavedLossRecords);
-      
-      toast('Active day workspace reset completed successfully.', 'success');
+      setActiveRecords([]);
+      toast('Active LP workspace reset completed successfully.', 'success');
     } catch (err) {
-      toast('Failed to clear active shift table items.', 'error');
+      toast('Failed to clear active shift items.', 'error');
       console.error(err);
     } finally {
       setIsResetting(false);
@@ -225,99 +217,124 @@ export function LpTrackerList() {
 
   async function handleSingleSubmit() {
     if (!trackingId.trim() || !wishmasterName.trim() || !agingDays.trim()) {
-      toast('Please supply all required tracking input parameters.', 'error');
+      toast('Please supply all required tracking parameters.', 'error');
       return;
     }
 
     const cleanId = trackingId.trim().toUpperCase();
-    const assignedPriority = calculatePriority(agingDays);
+    const parsedAging = Math.round(parseFloat(agingDays)) || 0;
+    const assignedPriority = calculatePriority(parsedAging);
+
+    // Check if TID already exists in loss_ledger
+    const existingLossMatch = lossRecords.find(r => r.tracking_id.toUpperCase() === cleanId);
+    const finalStatus = existingLossMatch ? 'ALREADY MARKED LOSS' : status;
+    const finalWmName = existingLossMatch?.wishmaster_name ? existingLossMatch.wishmaster_name : wishmasterName.trim();
+
     const payload = {
       tracking_id: cleanId,
-      wishmaster_name: wishmasterName.trim(),
-      aging_days: parseInt(agingDays, 10),
-      priority: assignedPriority,
-      status: status,
-      details: itemDetails.trim() || null, 
-      resolved_at: (status === 'LOSS' || status === 'CLEARING TODAY') ? new Date().toISOString() : null
+      wishmaster_name: finalWmName,
+      aging_days: parsedAging,
+      priority: existingLossMatch ? 'CRITICAL' : assignedPriority,
+      status: finalStatus,
+      details: itemDetails.trim() || (existingLossMatch ? existingLossMatch.details || 'Found in Loss Ledger' : null), 
+      resolved_at: (finalStatus === 'ALREADY MARKED LOSS' || finalStatus === 'CLEARING TODAY') ? new Date().toISOString() : null
     };
 
     try {
       await createLpRecord(payload);
-      const autoClearedCount = await sweepMissingRecords([cleanId]);
-      
-      if (autoClearedCount > 0) {
-        toast(`Logged ${cleanId}. Auto-archived ${autoClearedCount} missing rows!`, 'success');
-      } else {
-        toast(`Logged Case: ${cleanId}`, 'success');
+      if (finalStatus !== 'ALREADY MARKED LOSS') {
+        await sweepMissingRecords([cleanId]);
       }
 
+      toast(`Logged Case: ${cleanId} ${existingLossMatch ? '(Status: ALREADY MARKED LOSS)' : ''}`, 'success');
       resetSingleForm();
       setIsModalOpen(false);
       loadData();
     } catch (err) {
-      toast('Failed creating new tracker entry layout row.', 'error');
+      toast('Failed creating/updating tracker entry.', 'error');
     }
   }
 
   async function handleBulkSubmit() {
     if (!bulkText.trim() || !bulkWishmaster.trim()) {
-      toast('Provide both the bulk manifest list and a target Courier assignment.', 'error');
+      toast('Provide both the bulk manifest list and a Courier assignment.', 'error');
       return;
     }
 
-    const lines = bulkText.split('\n');
-    const parsedPayloads = [];
+    const lines = bulkText.split(/[\r\n]+/);
+    const payloadMap = new Map();
     const incomingIds = [];
     const timestamp = new Date().toISOString();
 
+    // Map loss ledger records to identify already marked losses and preserve original wishmaster names
+    const knownLossMap = new Map();
+    lossRecords.forEach(r => {
+      knownLossMap.set(r.tracking_id.toUpperCase(), {
+        wm_name: r.wishmaster_name,
+        details: r.details
+      });
+    });
+
     lines.forEach((line) => {
       const cleanLine = line.trim();
-      if (!cleanLine || cleanLine === 'CPT') return;
+      if (!cleanLine || cleanLine.toUpperCase() === 'CPT') return;
 
       const columns = cleanLine.split(/\s+/);
       if (columns.length < 2) return;
 
       const tId = columns[0].toUpperCase();
       const rawAging = columns[1];
-      const parsedAging = parseInt(rawAging, 10);
+      const parsedAging = Math.round(parseFloat(rawAging));
 
       if (isNaN(parsedAging)) return;
 
+      const lossInfo = knownLossMap.get(tId);
+      const isKnownLoss = !!lossInfo;
       const isFound = cleanLine.includes('✅') || cleanLine.toLowerCase().includes('found');
-      const inferredStatus = isFound ? 'CLEARING TODAY' : 'NOT FOUND';
-      const assignedPriority = calculatePriority(parsedAging);
+      
+      // If TID is in loss_ledger, flag it in lp_tracker as 'ALREADY MARKED LOSS'
+      const inferredStatus = isKnownLoss ? 'ALREADY MARKED LOSS' : isFound ? 'CLEARING TODAY' : 'NOT FOUND';
+      const assignedPriority = isKnownLoss ? 'CRITICAL' : calculatePriority(parsedAging);
+      const assignedWm = isKnownLoss && lossInfo.wm_name ? lossInfo.wm_name : bulkWishmaster.trim();
 
-      incomingIds.push(tId);
-      parsedPayloads.push({
+      if (!isKnownLoss) incomingIds.push(tId);
+
+      payloadMap.set(tId, {
         tracking_id: tId,
-        wishmaster_name: bulkWishmaster.trim(),
+        wishmaster_name: assignedWm,
         aging_days: parsedAging,
         priority: assignedPriority,
         status: inferredStatus,
-        details: null, 
-        resolved_at: inferredStatus === 'CLEARING TODAY' ? timestamp : null
+        details: isKnownLoss ? (lossInfo.details || 'Already Marked Loss in Loss Ledger') : null, 
+        resolved_at: (inferredStatus === 'CLEARING TODAY' || inferredStatus === 'ALREADY MARKED LOSS') ? timestamp : null
       });
     });
 
+    const parsedPayloads = Array.from(payloadMap.values());
+
     if (parsedPayloads.length === 0) {
-      toast('Could not interpret any valid Tracking metrics out of text block.', 'error');
+      toast('Could not interpret any valid tracking metrics from input.', 'error');
       return;
     }
 
     try {
       await createLpRecordsBulk(parsedPayloads);
       const autoClearedCount = await sweepMissingRecords(incomingIds);
+      const alreadyLossCount = parsedPayloads.filter(p => p.status === 'ALREADY MARKED LOSS').length;
 
-      if (autoClearedCount > 0) {
-        toast(`Imported ${parsedPayloads.length} entries. Sweep moved ${autoClearedCount} un-submitted logs directly to Archives!`, 'success');
+      if (alreadyLossCount > 0) {
+        toast(`Imported ${parsedPayloads.length} entries (${alreadyLossCount} flagged as ALREADY MARKED LOSS).`, 'info');
+      } else if (autoClearedCount > 0) {
+        toast(`Imported ${parsedPayloads.length} entries. Sweep cleared ${autoClearedCount} un-submitted logs!`, 'success');
       } else {
-        toast(`Successfully batch processed ${parsedPayloads.length} records!`, 'success');
+        toast(`Successfully processed ${parsedPayloads.length} records!`, 'success');
       }
 
       resetBulkForm();
       setIsModalOpen(false);
       loadData();
     } catch (err) {
+      console.error(err);
       toast('Database write transaction error running bulk parsing stack.', 'error');
     }
   }
@@ -342,17 +359,22 @@ export function LpTrackerList() {
 
   async function saveInlineWmUpdate(id) {
     if (!editingWmName.trim()) {
-      toast('Wishmaster assignment name cannot be left blank.', 'error');
+      toast('Wishmaster name cannot be left blank.', 'error');
       return;
     }
     setIsUpdatingWm(true);
+    const isLoss = viewMode === 'loss';
     try {
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, wishmaster_name: editingWmName.trim() } : r));
-      await updateLpRecord(id, { wishmaster_name: editingWmName.trim() });
-      toast('Wishmaster assignment saved successfully.', 'success');
+      if (isLoss) {
+        setLossRecords(prev => prev.map(r => r.id === id ? { ...r, wishmaster_name: editingWmName.trim() } : r));
+      } else {
+        setActiveRecords(prev => prev.map(r => r.id === id ? { ...r, wishmaster_name: editingWmName.trim() } : r));
+      }
+      await updateLpRecord(id, { wishmaster_name: editingWmName.trim() }, isLoss);
+      toast('Wishmaster assignment saved.', 'success');
       setEditingRecordId(null);
     } catch (err) {
-      toast('Failed to save updated wishmaster name changes.', 'error');
+      toast('Failed to save updated wishmaster name.', 'error');
       loadData();
     } finally {
       setIsUpdatingWm(false);
@@ -364,79 +386,53 @@ export function LpTrackerList() {
     setEditingWmName('');
   }
 
-  async function handleStatusChange(id, nextStatus) {
-    const confirmationText = nextStatus === 'LOSS' 
-      ? "Are you sure you want to mark this shipment file as a LOSS?" 
-      : nextStatus === 'CLEARING TODAY' 
-        ? "Are you sure you want to mark this shipment file as CLEARED?" 
-        : "Are you sure you want to revert this case back to active tracking status?";
-
-    if (!window.confirm(confirmationText)) return;
-
+  async function handleStatusChange(item, nextStatus) {
+    const isLoss = viewMode === 'loss';
     try {
-      const isResolved = nextStatus === 'LOSS' || nextStatus === 'CLEARING TODAY';
+      const isResolved = nextStatus === 'CLEARING TODAY' || nextStatus === 'ALREADY MARKED LOSS' || nextStatus === 'LOSS';
       const timestamp = isResolved ? new Date().toISOString() : null;
-      const priorityPatch = nextStatus === 'LOSS' ? 'CRITICAL' : undefined;
 
-      setRecords(prev => prev.map(r => {
-        if (r.id === id) {
-          return { 
-            ...r, 
-            status: nextStatus, 
-            resolved_at: timestamp,
-            ...(priorityPatch && { priority: priorityPatch })
-          };
-        }
-        return r;
-      }));
+      if (isLoss) {
+        setLossRecords(prev => prev.map(r => r.id === item.id ? { ...r, status: nextStatus, resolved_at: timestamp } : r));
+      } else {
+        setActiveRecords(prev => prev.map(r => r.id === item.id ? { ...r, status: nextStatus, resolved_at: timestamp } : r));
+      }
 
-      const updatePayload = { status: nextStatus, resolved_at: timestamp };
-      if (priorityPatch) updatePayload.priority = priorityPatch;
-
-      await updateLpRecord(id, updatePayload);
-      toast(`Updated case status to ${nextStatus}`, 'success');
+      await updateLpRecord(item.id, { status: nextStatus, resolved_at: timestamp }, isLoss);
+      toast(`Updated status to ${nextStatus}`, 'success');
     } catch (err) {
-      toast('Failed to save status modifications.', 'error');
-      loadData();
-    }
-  }
-
-  async function handleMarkLoss(id, trackingLabel) {
-    if (!window.confirm(`Are you sure you want to mark case reference ${trackingLabel} as a complete asset LOSS?`)) return;
-
-    try {
-      const timestamp = new Date().toISOString();
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'LOSS', priority: 'CRITICAL', resolved_at: timestamp } : r));
-      await updateLpRecord(id, { status: 'LOSS', priority: 'CRITICAL', resolved_at: timestamp });
-      toast(`Case ${trackingLabel} marked as Loss.`, 'success');
-    } catch (err) {
-      toast('Error reporting asset loss.', 'error');
+      toast('Failed to save status modification.', 'error');
       loadData();
     }
   }
 
   async function handleMarkCleared(id, trackingLabel) {
-    if (!window.confirm(`Are you sure you want to confirm package deployment and CLEAR case reference ${trackingLabel}?`)) return;
+    if (!window.confirm(`Mark ${trackingLabel} as CLEARED?`)) return;
 
     try {
       const timestamp = new Date().toISOString();
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'CLEARING TODAY', resolved_at: timestamp } : r));
-      await updateLpRecord(id, { status: 'CLEARING TODAY', resolved_at: timestamp });
+      setActiveRecords(prev => prev.map(r => r.id === id ? { ...r, status: 'CLEARING TODAY', resolved_at: timestamp } : r));
+      await updateLpRecord(id, { status: 'CLEARING TODAY', resolved_at: timestamp }, false);
       toast(`Case ${trackingLabel} marked as Cleared.`, 'success');
     } catch (err) {
-      toast('Error saving cleared row parameters.', 'error');
+      toast('Error updating record.', 'error');
       loadData();
     }
   }
 
   async function handleDelete(id, label) {
-    if (!window.confirm(`Delete data traces for case file reference ${label}?`)) return;
+    const isLoss = viewMode === 'loss';
+    if (!window.confirm(`Permanently delete record ${label}?`)) return;
     try {
-      await deleteLpRecord(id);
-      toast('Case record purged safely.', 'success');
-      setRecords(prev => prev.filter(r => r.id !== id));
+      await deleteLpRecord(id, isLoss);
+      toast('Record purged successfully.', 'success');
+      if (isLoss) {
+        setLossRecords(prev => prev.filter(r => r.id !== id));
+      } else {
+        setActiveRecords(prev => prev.filter(r => r.id !== id));
+      }
     } catch (err) {
-      toast('Error executing item deletion block.', 'error');
+      toast('Error deleting record.', 'error');
     }
   }
 
@@ -451,30 +447,15 @@ export function LpTrackerList() {
 
   function getStatusSelectStyle(val) {
     switch(val) {
+      case 'ALREADY MARKED LOSS': return 'bg-rose-600 text-white font-black border-rose-700';
       case 'LOSS': return 'bg-rose-100 border-rose-300 text-rose-800 font-black';
       case 'CLEARING TODAY': return 'bg-emerald-100 border-emerald-300 text-emerald-800 font-bold';
       default: return 'bg-purple-100 border-purple-300 text-purple-800 font-medium';
     }
   }
 
-  // --- DATA FILTERING ENGINE ---
-  const processedRecords = (() => {
-    let baseList = records.filter(rec => {
-      if (viewMode === 'loss') {
-        // PERMANENT LEDGER ARCHIVE: Keep showing all loss records permanently until manual row deletion
-        return rec.status === 'LOSS';
-      } else {
-        // ACTIVE TRACKER VIEW: Hide ANY record that was resolved BEFORE our last workspace reset action
-        if (rec.resolved_at && new Date(rec.resolved_at) < new Date(lastResetTime)) {
-          return false;
-        }
-        // Fallback filter: standard 2-day historical automatic archival layout rules
-        if (rec.status === 'LOSS' || rec.status === 'CLEARING TODAY') {
-          return !isOlderThanTwoDays(rec.resolved_at);
-        }
-        return true;
-      }
-    });
+  const displayedRecords = (() => {
+    const baseList = viewMode === 'loss' ? lossRecords : activeRecords;
     
     let filtered = baseList.filter(rec => {
       const q = searchQuery.toLowerCase();
@@ -487,13 +468,6 @@ export function LpTrackerList() {
     });
 
     filtered.sort((a, b) => {
-      const aResolved = a.status === 'LOSS' || a.status === 'CLEARING TODAY';
-      const bResolved = b.status === 'LOSS' || b.status === 'CLEARING TODAY';
-
-      if (viewMode === 'active' && aResolved !== bResolved) {
-        return aResolved ? 1 : -1;
-      }
-
       if (sortDirection === 'auto') {
         const weightA = PRIORITY_RANK[a.priority] || 0;
         const weightB = PRIORITY_RANK[b.priority] || 0;
@@ -512,8 +486,7 @@ export function LpTrackerList() {
 
   return (
     <div className="w-full p-4 space-y-4 animate-fade-in">
-      
-      {/* HEADER CONTROLS NAVIGATION STRIP */}
+      {/* HEADER NAVIGATION STRIP */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <button 
@@ -528,20 +501,22 @@ export function LpTrackerList() {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            onClick={handleResetDayArchive}
-            disabled={isResetting || records.length === 0}
-            className="flex items-center gap-1.5 bg-amber-50 hover:bg-rose-600 text-amber-700 hover:text-white border border-amber-200 hover:border-rose-300 text-xs font-black uppercase px-3 py-2 rounded-xl transition-all shadow-3xs disabled:opacity-40 disabled:hover:bg-amber-50 disabled:hover:text-amber-700 disabled:cursor-not-allowed h-9"
-            title="Purge daily workspace trackers while safeguarding loss archives permanently"
-          >
-            {isResetting ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <>
-                <Trash2 className="h-3.5 w-3.5" /> Reset Day Archive
-              </>
-            )}
-          </button>
+          {viewMode === 'active' && (
+            <button
+              onClick={handleResetDayArchive}
+              disabled={isResetting || activeRecords.length === 0}
+              className="flex items-center gap-1.5 bg-amber-50 hover:bg-rose-600 text-amber-700 hover:text-white border border-amber-200 hover:border-rose-300 text-xs font-black uppercase px-3 py-2 rounded-xl transition-all shadow-3xs disabled:opacity-40 disabled:hover:bg-amber-50 disabled:hover:text-amber-700 disabled:cursor-not-allowed h-9"
+              title="Purge daily active workspace trackers (lp_tracker). The dedicated Loss Ledger is untouched."
+            >
+              {isResetting ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Trash2 className="h-3.5 w-3.5" /> Reset Day Archive
+                </>
+              )}
+            </button>
+          )}
 
           <button 
             onClick={() => setIsModalOpen(true)}
@@ -554,14 +529,13 @@ export function LpTrackerList() {
 
       {/* FULL WIDTH MAIN PANEL */}
       <div className="card p-0 overflow-hidden border border-ink-200 shadow-sm bg-white">
-        
-        {/* SUB HEADER - SYSTEM FILTER ACTIONS & SEGMENTED SWAP SWITCH */}
+        {/* SUB HEADER */}
         <div className="p-4 border-b border-ink-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-ink-50/40">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-ink-400" />
             <input 
               type="text" 
-              placeholder={viewMode === 'active' ? "Search active files..." : "Search loss ledger records..."}
+              placeholder={viewMode === 'active' ? "Search active tracker files..." : "Search loss ledger records..."}
               className="input h-9 pl-9 pr-3 text-xs bg-white border-ink-200 w-full"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -569,8 +543,7 @@ export function LpTrackerList() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
-            
-            {/* SEGMENTED PILL SWAP SWITCH */}
+            {/* SEGMENTED SWITCH */}
             <div className="p-1 bg-ink-100 rounded-xl flex items-center border border-ink-200/60 shadow-3xs relative select-none">
               <button
                 type="button"
@@ -581,7 +554,7 @@ export function LpTrackerList() {
                     : 'text-ink-500 hover:text-ink-800'
                 }`}
               >
-                Active Tracker
+                Active Tracker ({activeRecords.length})
               </button>
               <button
                 type="button"
@@ -592,29 +565,29 @@ export function LpTrackerList() {
                     : 'text-ink-500 hover:text-ink-800'
                 }`}
               >
-                <Archive className="h-3 w-3" /> Loss Ledger
+                <Archive className="h-3 w-3" /> Loss Ledger ({lossRecords.length})
               </button>
             </div>
 
             <div className="text-[11px] font-mono text-brand-700 bg-brand-50 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-bold shadow-3xs">
               <Wand2 className="h-3.5 w-3.5 text-brand-600 animate-pulse" /> 
-              {viewMode === 'active' ? 'Hierarchy Balanced View' : 'Synced Asset Loss Ledger'}
+              {viewMode === 'active' ? 'Standalone lp_tracker Table' : 'Standalone loss_ledger Table'}
             </div>
           </div>
         </div>
 
-        {/* PRIMARY DATA MATRIX TABLE AREA */}
+        {/* DATA TABLE */}
         <div className="overflow-x-auto">
           {loading ? (
             <div className="py-24 text-center text-xs text-ink-500 flex flex-col items-center justify-center gap-2.5">
               <RefreshCw className="h-6 w-6 text-brand-500 animate-spin" />
-              <span>Querying database node stacks...</span>
+              <span>Loading records...</span>
             </div>
-          ) : processedRecords.length === 0 ? (
+          ) : displayedRecords.length === 0 ? (
             <div className="py-24 text-center text-sm text-ink-400 font-medium px-6 italic">
               {viewMode === 'active' 
-                ? 'No items pending tracking data matches found.' 
-                : 'No complete shipment loss log parameters captured yet.'}
+                ? 'No active tracking cases found.' 
+                : 'No records in the dedicated Loss Ledger table.'}
             </div>
           ) : (
             <table className="w-full border-collapse text-left text-xs">
@@ -637,23 +610,29 @@ export function LpTrackerList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {processedRecords.map(item => {
-                  const isRowLocked = item.status === 'LOSS' || item.status === 'CLEARING TODAY';
+                {displayedRecords.map(item => {
+                  const isAlreadyLoss = item.status === 'ALREADY MARKED LOSS';
                   const isEditingThisRow = editingRecordId === item.id;
                   
                   return (
                     <tr 
                       key={item.id} 
                       className={`transition-all duration-200 group ${
-                        item.status === 'LOSS' 
+                        isAlreadyLoss
+                          ? 'bg-rose-100/50 text-rose-950 font-bold hover:bg-rose-100/80'
+                          : item.status === 'LOSS'
                           ? 'bg-rose-50/20 text-ink-700 hover:bg-rose-50/40' 
-                          : isRowLocked ? 'bg-ink-50/40 text-ink-600' : 'hover:bg-brand-50/20'
+                          : item.status === 'CLEARING TODAY' ? 'bg-ink-50/40 text-ink-600' : 'hover:bg-brand-50/20'
                       }`}
                     >
                       <td className="p-4 text-center">
                         <div className="mx-auto p-1.5 rounded-lg bg-ink-50 border border-ink-100 text-ink-500 w-8 h-8 flex items-center justify-center">
-                          {isRowLocked ? (
-                            <CheckCircle2 className={`h-4 w-4 ${item.status === 'LOSS' ? 'text-red-500' : 'text-emerald-500'}`} />
+                          {isAlreadyLoss ? (
+                            <AlertTriangle className="h-4 w-4 text-rose-600 animate-bounce" />
+                          ) : item.status === 'LOSS' ? (
+                            <CheckCircle2 className="h-4 w-4 text-red-500" />
+                          ) : item.status === 'CLEARING TODAY' ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                           ) : (
                             <Package className="h-4 w-4" />
                           )}
@@ -720,9 +699,9 @@ export function LpTrackerList() {
                         <select
                           className={`text-[11px] font-mono border rounded px-2 py-1 uppercase font-bold focus:outline-none ${getStatusSelectStyle(item.status)}`}
                           value={item.status}
-                          onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                          onChange={(e) => handleStatusChange(item, e.target.value)}
                         >
-                          {STATUS_OPTIONS.map(opt => (
+                          {(viewMode === 'active' ? STATUS_OPTIONS_ACTIVE : STATUS_OPTIONS_LOSS).map(opt => (
                             <option key={opt} value={opt} className="bg-white text-ink-900 font-medium">{opt}</option>
                           ))}
                         </select>
@@ -733,34 +712,19 @@ export function LpTrackerList() {
                           <button
                             onClick={() => openInspector(item)}
                             className="p-1.5 text-ink-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
-                            title="Inspect shipment explanations"
+                            title="Inspect details"
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
 
                           <span className="text-ink-200 select-none">|</span>
 
-                          {item.status !== 'LOSS' && item.status !== 'CLEARING TODAY' ? (
-                            <>
-                              <button onClick={() => handleMarkLoss(item.id, item.tracking_id)} className="flex items-center bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase px-2 py-1 rounded shadow-3xs">
-                                <ShieldAlert className="h-2.5 w-2.5 mr-0.5" /> Loss
-                              </button>
-                              <button onClick={() => handleMarkCleared(item.id, item.tracking_id)} className="flex items-center bg-emerald-600 text-white hover:bg-emerald-700 text-[9px] font-black uppercase px-2 py-1 rounded shadow-3xs">
-                                <Check className="h-2.5 w-2.5 mr-0.5" /> Clear
-                              </button>
-                            </>
-                          ) : (
-                            <button 
-                              onClick={() => handleStatusChange(item.id, 'NOT FOUND')}
-                              className="text-[10px] font-mono uppercase tracking-tight font-black text-brand-600 hover:text-brand-800 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5 transition-colors"
-                              title="Re-open this layout row file"
-                            >
-                              Reopen
+                          {viewMode === 'active' && item.status !== 'CLEARING TODAY' && (
+                            <button onClick={() => handleMarkCleared(item.id, item.tracking_id)} className="flex items-center bg-emerald-600 text-white hover:bg-emerald-700 text-[9px] font-black uppercase px-2 py-1 rounded shadow-3xs">
+                              <Check className="h-2.5 w-2.5 mr-0.5" /> Clear
                             </button>
                           )}
 
-                          <span className="text-ink-200 select-none">|</span>
-                          
                           <button 
                             onClick={() => handleDelete(item.id, item.tracking_id)}
                             className="p-1.5 text-ink-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
@@ -778,7 +742,7 @@ export function LpTrackerList() {
         </div>
       </div>
 
-      {/* --- QUICK VIEW INSPECTION MODAL PANEL --- */}
+      {/* INSPECTION MODAL */}
       {inspectingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="card w-full max-w-md p-6 border-t-4 border-t-brand-600 border-x border-b border-ink-200 bg-white shadow-xl relative animate-scale-up">
@@ -851,7 +815,7 @@ export function LpTrackerList() {
                     className="input text-xs bg-white h-24 p-2 w-full border-brand-400 focus:border-brand-600 resize-none leading-relaxed font-medium"
                     value={editedDetailsText}
                     onChange={e => setEditedDetailsText(e.target.value)}
-                    placeholder="Enter updated shipment context rules or remarks..."
+                    placeholder="Enter updated shipment context notes or remarks..."
                   />
                   <div className="flex justify-end gap-1.5">
                     <button 
@@ -896,11 +860,10 @@ export function LpTrackerList() {
         </div>
       )}
 
-      {/* POPUP OVERLAY DATA MODAL DIALOG */}
+      {/* ENTRY MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="card w-full max-w-lg p-6 border border-brand-200 bg-white shadow-xl relative animate-scale-up">
-            
             <button onClick={() => setIsModalOpen(false)} className="absolute right-4 top-4 p-1 rounded-lg text-ink-400 hover:text-ink-600 hover:bg-ink-100 transition-colors">
               <X className="h-4 w-4" />
             </button>
@@ -933,7 +896,7 @@ export function LpTrackerList() {
                     <div>
                       <label className="label-text flex items-center gap-1"><Activity className="h-3.5 w-3.5 text-ink-400" /> Operational Status</label>
                       <select className="input text-xs py-1.5 font-bold" value={status} onChange={e => setStatus(e.target.value)}>
-                        {STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        {STATUS_OPTIONS_ACTIVE.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
                   </div>
@@ -941,7 +904,7 @@ export function LpTrackerList() {
                     <label className="label-text flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-ink-400" /> Shipment Details / Explanation</label>
                     <textarea 
                       className="input text-xs h-20 p-2.5 leading-relaxed resize-none" 
-                      placeholder="Provide custom context notes or details about this specific shipment investigation..." 
+                      placeholder="Provide custom context notes or remarks..." 
                       value={itemDetails} 
                       onChange={e => setItemDetails(e.target.value)} 
                     />

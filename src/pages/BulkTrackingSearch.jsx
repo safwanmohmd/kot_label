@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../lib/useToast';
-import { fetchLpRecords } from '../lib/lpService';
 
 export default function BulkTrackingSearch() {
   const toastHook = typeof useToast === 'function' ? useToast() : null;
@@ -36,8 +35,8 @@ export default function BulkTrackingSearch() {
   const [results, setResults] = useState([]);
   const [filterType, setFilterType] = useState('all'); // 'all' | 'found' | 'loss' | 'not_found'
 
-  // Helper: Query LP Tracker & All Loss Ledger tables
-  const queryAllLossSources = async (trackingIds = []) => {
+  // Helper: Query ONLY Dedicated Loss Ledger table
+  const queryDedicatedLossLedger = async (trackingIds = []) => {
     const matchedLossMap = new Map();
     if (!trackingIds || trackingIds.length === 0) return matchedLossMap;
 
@@ -45,71 +44,60 @@ export default function BulkTrackingSearch() {
       trackingIds.map((id) => id.trim().toLowerCase())
     );
 
-    // 1. Check directly via lpService fetchLpRecords()
+    // 1. Query dedicated loss_ledger table
     try {
-      if (typeof fetchLpRecords === 'function') {
-        const lpData = await fetchLpRecords();
-        if (Array.isArray(lpData)) {
-          lpData.forEach((rec) => {
-            const tid = (rec.tracking_id || rec.tid || '').trim().toLowerCase();
-            if (tid && normalizedTargetIds.has(tid)) {
-              const isStatusLoss = (rec.status || '').toUpperCase() === 'LOSS';
-              matchedLossMap.set(tid, {
-                trackingId: rec.tracking_id,
-                reason: rec.details || (isStatusLoss ? 'Loss Reported / Mailed' : rec.status),
-                date: rec.resolved_at?.split('T')[0] || rec.created_at?.split('T')[0] || '-',
-                wmVendor: rec.wishmaster_name || rec.vendor || '-',
-                isExplicitLoss: isStatusLoss,
-                status: isStatusLoss ? 'LOSS / LOSS MAILED' : rec.status,
-                agingDays: rec.aging_days ?? '-',
-                priority: rec.priority || 'NORMAL',
-              });
-            }
-          });
-        }
+      const { data, error } = await supabase
+        .from('loss_ledger')
+        .select('*')
+        .in('tracking_id', trackingIds);
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          const tid = (row.tracking_id || '').trim().toLowerCase();
+          if (tid && normalizedTargetIds.has(tid)) {
+            matchedLossMap.set(tid, {
+              trackingId: row.tracking_id,
+              reason: row.details || 'Loss Reported / Mailed',
+              date: row.resolved_at?.split('T')[0] || row.created_at?.split('T')[0] || '-',
+              wmVendor: row.wishmaster_name || '-',
+              isExplicitLoss: true,
+              status: 'LOSS / LOSS MAILED',
+              agingDays: row.aging_days ?? '-',
+              priority: row.priority || 'CRITICAL',
+            });
+          }
+        });
       }
-    } catch (lpErr) {
-      console.warn('Direct fetchLpRecords scan notice:', lpErr);
+    } catch (e) {
+      console.warn('Dedicated loss_ledger query notice:', e);
     }
 
-    // 2. Query Supabase Loss & LP tables
-    const tablesToTry = [
-      'lp_tracker_items',
-      'loss_prevention_records',
-      'wm_loss_records',
-      'wm_loss_emails',
-      'loss_records',
-      'wm_loss_items'
-    ];
+    // 2. Query legacy wm_loss_records if present
+    try {
+      const { data, error } = await supabase
+        .from('wm_loss_records')
+        .select('*')
+        .in('tracking_id', trackingIds);
 
-    for (const tableName of tablesToTry) {
-      try {
-        const { data, error } = await supabase
-          .from(tableName)
-          .select('*')
-          .in('tracking_id', trackingIds);
-
-        if (!error && Array.isArray(data)) {
-          data.forEach((row) => {
-            const tid = (row.tracking_id || row.tid || '').trim().toLowerCase();
-            if (tid && !matchedLossMap.has(tid)) {
-              const isLoss = (row.status || '').toUpperCase() === 'LOSS' || tableName.includes('loss');
-              matchedLossMap.set(tid, {
-                trackingId: row.tracking_id || row.tid,
-                reason: row.details || row.reason || row.loss_reason || (isLoss ? 'Loss Reported / Mailed' : row.status),
-                date: row.resolved_at?.split('T')[0] || row.date || row.created_at?.split('T')[0] || '-',
-                wmVendor: row.wishmaster_name || row.wm_name || row.vendor || '-',
-                isExplicitLoss: isLoss,
-                status: isLoss ? 'LOSS / LOSS MAILED' : (row.status || 'LP TRACKED'),
-                agingDays: row.aging_days ?? '-',
-                priority: row.priority || 'NORMAL',
-              });
-            }
-          });
-        }
-      } catch (e) {
-        console.warn(`Query on table ${tableName} skipped:`, e);
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          const tid = (row.tracking_id || '').trim().toLowerCase();
+          if (tid && !matchedLossMap.has(tid)) {
+            matchedLossMap.set(tid, {
+              trackingId: row.tracking_id,
+              reason: row.reason || 'Loss Reported',
+              date: row.date || row.created_at?.split('T')[0] || '-',
+              wmVendor: row.wm_name || row.vendor || '-',
+              isExplicitLoss: true,
+              status: 'LOSS / LOSS MAILED',
+              agingDays: '-',
+              priority: 'CRITICAL',
+            });
+          }
+        });
       }
+    } catch (e) {
+      // Ignored
     }
 
     return matchedLossMap;
@@ -126,8 +114,8 @@ export default function BulkTrackingSearch() {
     setSingleResult(null);
 
     try {
-      // Query Loss & LP Tracker sources
-      const lossMap = await queryAllLossSources([cleanId]);
+      // Query Loss Ledger sources ONLY (never treats pending lp_tracker as loss or bagged)
+      const lossMap = await queryDedicatedLossLedger([cleanId]);
       const lossFound = lossMap.get(cleanId.toLowerCase());
 
       // Query Bagged Items table
@@ -161,7 +149,7 @@ export default function BulkTrackingSearch() {
         .maybeSingle();
 
       if (lossFound || bagData) {
-        const isLoss = lossFound?.isExplicitLoss || false;
+        const isLoss = !!lossFound;
         const bagType = bagData?.dispatch_bags?.destination === 'missroute' ? 'Missroute' : 'TRO';
 
         setSingleResult({
@@ -170,25 +158,21 @@ export default function BulkTrackingSearch() {
           isBagged: !!bagData,
           status: isLoss
             ? 'LOSS / LOSS MAILED'
-            : bagData
-            ? 'BAGGED / FOUND'
-            : (lossFound?.status || 'LP RECORD FOUND'),
+            : 'BAGGED / FOUND',
           bgTrackingId: bagData?.bg_tracking_id || '-',
-          bagType: isLoss ? 'LOSS' : bagData ? bagType : 'LP TRACKER',
-          sessionDate: bagData?.bag_sessions?.session_date || lossFound?.date || '-',
-          sessionTitle: bagData?.bag_sessions?.title || (lossFound ? `Loss Ledger (${lossFound.wmVendor})` : '-'),
+          bagType: isLoss ? 'LOSS' : bagType,
+          sessionDate: isLoss ? lossFound.date : (bagData?.bag_sessions?.session_date || '-'),
+          sessionTitle: isLoss ? `Loss Ledger (${lossFound.wmVendor})` : (bagData?.bag_sessions?.title || '-'),
           category: bagData?.category || 'SUR/SURF',
-          lossReason: lossFound?.reason || 'Loss Reported in LP Ledger',
+          lossReason: lossFound?.reason || '-',
           wmVendor: lossFound?.wmVendor || '-',
           agingDays: lossFound?.agingDays || '-',
         });
 
         if (isLoss) {
           showToast(`⚠️ TID ${cleanId} found in LOSS LEDGER!`, 'error');
-        } else if (bagData) {
-          showToast(`✓ TID ${cleanId} found in active bag dispatch`, 'success');
         } else {
-          showToast(`TID ${cleanId} found in LP Tracker`, 'info');
+          showToast(`✓ TID ${cleanId} found in active bag dispatch`, 'success');
         }
       } else {
         setSingleResult(null);
@@ -253,8 +237,8 @@ export default function BulkTrackingSearch() {
         if (bagData) fetchedBagged = fetchedBagged.concat(bagData);
       }
 
-      // Query Loss Ledger & LP Tracker sources
-      const lossMap = await queryAllLossSources(uniqueLookupSet);
+      // Query Dedicated Loss Ledger table
+      const lossMap = await queryDedicatedLossLedger(uniqueLookupSet);
 
       // Index Bagged Items by lowercase TID
       const bagMap = new Map();
@@ -269,7 +253,7 @@ export default function BulkTrackingSearch() {
         const bagMatch = bagMap.get(key);
         const lossMatch = lossMap.get(key);
 
-        if (lossMatch && lossMatch.isExplicitLoss) {
+        if (lossMatch) {
           return {
             index: idx + 1,
             trackingId,
@@ -279,10 +263,10 @@ export default function BulkTrackingSearch() {
             bgTrackingId: bagMatch?.bg_tracking_id || '-',
             bagId: bagMatch?.bag_id || '-',
             bagType: 'LOSS',
-            sessionDate: lossMatch.date || bagMatch?.bag_sessions?.session_date || '-',
+            sessionDate: lossMatch.date || '-',
             sessionTitle: lossMatch.wmVendor !== '-' ? `Loss (${lossMatch.wmVendor})` : 'Loss Ledger Record',
             category: bagMatch?.category || 'SUR/SURF',
-            lossReason: lossMatch.reason || 'Loss reported / mailed',
+            lossReason: lossMatch.reason || 'Loss reported',
           };
         } else if (bagMatch) {
           const bagType = bagMatch.dispatch_bags?.destination === 'missroute' ? 'Missroute' : 'TRO';
@@ -299,21 +283,6 @@ export default function BulkTrackingSearch() {
             sessionTitle: bagMatch.bag_sessions?.title || 'N/A',
             category: bagMatch.category || 'SUR/SURF',
             lossReason: '-',
-          };
-        } else if (lossMatch) {
-          return {
-            index: idx + 1,
-            trackingId,
-            status: lossMatch.status || 'LP TRACKED',
-            isLoss: false,
-            isFound: true,
-            bgTrackingId: '-',
-            bagId: '-',
-            bagType: 'LP TRACKER',
-            sessionDate: lossMatch.date || '-',
-            sessionTitle: `Wishmaster: ${lossMatch.wmVendor}`,
-            category: 'SUR/SURF',
-            lossReason: lossMatch.reason || '-',
           };
         } else {
           return {
@@ -339,7 +308,7 @@ export default function BulkTrackingSearch() {
       const missingTotal = orderedOutput.filter((r) => !r.isFound && !r.isLoss).length;
 
       showToast(
-        `Audit Complete: ${foundTotal} Bagged, ${lossTotal} Loss / Mailed, ${missingTotal} No Record`,
+        `Audit Complete: ${foundTotal} Bagged, ${lossTotal} Loss Ledger, ${missingTotal} No Record`,
         'info'
       );
     } catch (err) {
@@ -425,12 +394,11 @@ export default function BulkTrackingSearch() {
               Shipment Tracking Auditor
             </h1>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Audits against <b>Bagging Dispatch Sessions</b> and the <b>Loss Prevention Ledger</b>.
+              Audits against <b>Bagging Dispatch Sessions</b> and the dedicated <b>Loss Ledger</b>.
             </p>
           </div>
         </div>
 
-        {/* Mode Toggle Switch */}
         <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200 w-full sm:w-auto">
           <button
             onClick={() => setSearchMode('bulk')}
@@ -451,7 +419,7 @@ export default function BulkTrackingSearch() {
         </div>
       </div>
 
-      {/* VIEW 1: SINGLE TRACKING ID SEARCH */}
+      {/* SINGLE SEARCH */}
       {searchMode === 'single' && (
         <div className="max-w-3xl mx-auto space-y-4 pt-2">
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-3">
@@ -476,7 +444,6 @@ export default function BulkTrackingSearch() {
             </form>
           </div>
 
-          {/* Single Result Inspector */}
           {singleSearched && (
             <div>
               {singleResult ? (
@@ -558,7 +525,7 @@ export default function BulkTrackingSearch() {
                     ✕ NO RECORD FOUND
                   </span>
                   <p className="text-xs text-gray-500 font-mono">
-                    Tracking ID <b>"{singleQuery}"</b> was not found in active dispatch bags or loss records.
+                    Tracking ID <b>"{singleQuery}"</b> was not found in active dispatch bags or the Loss Ledger.
                   </p>
                 </div>
               )}
@@ -567,10 +534,9 @@ export default function BulkTrackingSearch() {
         </div>
       )}
 
-      {/* VIEW 2: BULK TRACKING ID AUDITOR */}
+      {/* BULK SEARCH */}
       {searchMode === 'bulk' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Left Input Panel */}
           <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs space-y-3">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Paste Tracking IDs</h2>
@@ -604,7 +570,6 @@ export default function BulkTrackingSearch() {
             </form>
           </div>
 
-          {/* Right Results Panel */}
           <div className="lg:col-span-2 space-y-3">
             {/* Metric Overview */}
             <div className="grid grid-cols-4 gap-2">
