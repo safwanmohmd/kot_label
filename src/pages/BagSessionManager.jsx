@@ -97,7 +97,6 @@ export default function BagSessionManager() {
   // Mail Modal Configuration Fields
   const [mailSentFrom, setMailSentFrom] = useState('ElasticRunKottakkalODH_KOT');
   const [mailSentTo, setMailSentTo] = useState('MH CJB');
-  const [mailToteIds, setMailToteIds] = useState('');
 
   // Dashboard Filters & Pagination
   const [dashboardFilterDate, setDashboardFilterDate] = useState('');
@@ -956,7 +955,14 @@ export default function BagSessionManager() {
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
-    return sessions.filter((s) => {
+    return sessions.map((s) => {
+      const sortedGroups = [...(s.bgGroups || [])].sort((a, b) => {
+        if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
+        if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
+        return 0;
+      });
+      return { ...s, bgGroups: sortedGroups };
+    }).filter((s) => {
       const matchesDate = dashboardFilterDate ? s.session_date === dashboardFilterDate : true;
       const matchesStatus =
         dashboardFilterStatus === 'all'
@@ -977,16 +983,23 @@ export default function BagSessionManager() {
     return filteredSessions.slice(start, start + itemsPerPage);
   }, [filteredSessions, sessionPage]);
 
+  // Session Workspace filtered and always sorted with Missroute bags at the bottom
   const filteredWorkspaceBgs = useMemo(() => {
     if (!sessionDetails?.bgGroups) return [];
-    return sessionDetails.bgGroups.filter((g) => {
-      const matchesSearch = workspaceBgSearch.trim()
-        ? g.bg_tracking_id?.toLowerCase().includes(workspaceBgSearch.toLowerCase())
-        : true;
-      const matchesType =
-        workspaceBagTypeFilter === 'all' ? true : g.bag_type === workspaceBagTypeFilter;
-      return matchesSearch && matchesType;
-    });
+    return sessionDetails.bgGroups
+      .filter((g) => {
+        const matchesSearch = workspaceBgSearch.trim()
+          ? g.bg_tracking_id?.toLowerCase().includes(workspaceBgSearch.toLowerCase())
+          : true;
+        const matchesType =
+          workspaceBagTypeFilter === 'all' ? true : g.bag_type === workspaceBagTypeFilter;
+        return matchesSearch && matchesType;
+      })
+      .sort((a, b) => {
+        if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
+        if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
+        return 0;
+      });
   }, [sessionDetails, workspaceBgSearch, workspaceBagTypeFilter]);
 
   // 11. Copy Rich Mailable HTML & Text Format to Clipboard
@@ -2182,7 +2195,7 @@ export default function BagSessionManager() {
 
             {/* Editable Controls */}
             <div className="p-3 bg-gray-50 border-b space-y-2">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-gray-500">SENT FROM</label>
                   <input
@@ -2203,18 +2216,6 @@ export default function BagSessionManager() {
                     className="w-full bg-white border border-gray-300 rounded p-1 text-[11px] font-semibold"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-gray-500">
-                    EXTRA TOTE IDs (One per line / comma separated)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="535-GNL-379608, 535-GNL-374102..."
-                    value={mailToteIds}
-                    onChange={(e) => setMailToteIds(e.target.value)}
-                    className="w-full bg-white border border-gray-300 rounded p-1 text-[11px] font-mono"
-                  />
-                </div>
               </div>
             </div>
 
@@ -2224,16 +2225,18 @@ export default function BagSessionManager() {
                 {(() => {
                   const allGroups = mailSessionTarget.bgGroups || [];
                   
-                  // Separate standard bags from Tote bags
-                  const standardBagList = allGroups.filter((g) => g.bag_type !== 'tote');
-                  const sessionToteIds = allGroups.filter((g) => g.bag_type === 'tote').map((g) => g.bg_tracking_id);
+                  // Separate standard bags and sort so Missroute bags always appear at the bottom
+                  const standardBagList = allGroups
+                    .filter((g) => g.bag_type !== 'tote')
+                    .sort((a, b) => {
+                      if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
+                      if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
+                      return 0;
+                    });
                   
-                  // Combine with manual extra tote inputs
-                  const manualTotes = mailToteIds
-                    ? mailToteIds.split(/[,\n]/).map((t) => t.trim()).filter(Boolean)
-                    : [];
-
-                  const combinedToteList = Array.from(new Set([...sessionToteIds, ...manualTotes]));
+                  const combinedToteList = allGroups
+                    .filter((g) => g.bag_type === 'tote')
+                    .map((g) => g.bg_tracking_id);
 
                   const actualRowCount = Math.max(standardBagList.length, 1);
                   const totalShipmentSum = standardBagList.reduce((sum, b) => sum + (b.items?.length || 0), 0);
@@ -2254,17 +2257,17 @@ export default function BagSessionManager() {
                       <thead>
                         <tr style={{ backgroundColor: '#4B8B3B', color: '#FFFFFF', fontWeight: 'bold', fontSize: '11px' }}>
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '9%', color: '#FFFFFF' }}>DATE</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '16%', color: '#FFFFFF' }}>SENT FROM</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '12%', color: '#FFFFFF' }}>SENT TO</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '10%', color: '#FFFFFF' }}>BAG COUNT</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '7%', color: '#FFFFFF' }}>SL No</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '22%', color: '#FFFFFF' }}>BAG TRACKING ID</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '7%', color: '#FFFFFF' }}>COUNT</th>
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '9%', color: '#FFFFFF' }}>TYPE</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '15%', color: '#FFFFFF' }}>SENT FROM</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '11%', color: '#FFFFFF' }}>SENT TO</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '9%', color: '#FFFFFF' }}>BAG COUNT</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '6%', color: '#FFFFFF' }}>SL No</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '20%', color: '#FFFFFF' }}>BAG TRACKING ID</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '6%', color: '#FFFFFF' }}>COUNT</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '8%', color: '#FFFFFF' }}>TYPE</th>
                           {/* SPACE GAP */}
-                          <th style={{ width: '4%', border: 'none', backgroundColor: 'transparent' }}></th>
+                          <th style={{ width: '2%', border: 'none', backgroundColor: 'transparent' }}></th>
                           {/* TOTE ID HEADER */}
-                          <th style={{ border: '1px solid #000000', padding: '5px', width: '11%', backgroundColor: '#4B8B3B', color: '#FFFFFF' }}>TOTE ID</th>
+                          <th style={{ border: '1px solid #000000', padding: '5px', width: '14%', backgroundColor: '#4B8B3B', color: '#FFFFFF', whiteSpace: 'nowrap' }}>TOTE ID</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2358,6 +2361,7 @@ export default function BagSessionManager() {
                                   textAlign: 'center',
                                   color: '#000000',
                                   backgroundColor: '#FFFFFF',
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
                                 {bg?.bg_tracking_id || ''}
@@ -2403,6 +2407,8 @@ export default function BagSessionManager() {
                                   fontFamily: 'Arial, sans-serif',
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
+                                  whiteSpace: 'nowrap',
+                                  padding: '4px 6px',
                                 }}
                               >
                                 {toteId}
