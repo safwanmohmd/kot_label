@@ -2,258 +2,624 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Pending Shipment Reconciliation (Ekart ERP Replica)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EKL Last Mile - Pending Shipment Reconciliation</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  
   <style>
     :root {
-      --bg-color: #f4f6f8;
-      --border-color: #dfe1e6;
+      --primary-blue: #2874f0;
+      --nav-blue: #2455a8;
+      --bg-gray: #f1f3f6;
+      --border-gray: #dfe1e6;
+      --text-dark: #212121;
       --text-muted: #5e6c84;
-      --text-dark: #000000;
+      --highlight-yellow: #fff782;
+      --highlight-red: #ff8b8b;
+      --highlight-blue: #3d8aff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      margin: 20px;
-      background-color: var(--bg-color);
-      color: #333;
-    }
-
-    .header {
-      background: #0071dc;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .card {
-      background: white;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      position: relative;
-    }
-
-    .scan-box {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 20px;
-      justify-content: flex-end;
-    }
-
-    input[type="text"] {
-      padding: 6px 10px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      width: 200px;
-      outline: none;
-    }
-
-    input[type="text"]:focus {
-      border-color: #0071dc;
-    }
-
-    button {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 4px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    .btn-rto { background: #eab308; color: black; }
-    .btn-normal { background: #22c55e; color: white; }
-
-    /* Screen Loading / Blink Overlay */
-    .loading-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(255, 255, 255, 0.85);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      font-size: 14px;
-      color: #0071dc;
-      border-radius: 8px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.05s ease-in-out;
-      z-index: 10;
-    }
-
-    .loading-overlay.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    /* Exact Ekart Styled-Components Structure */
-    .sc-AykKC.haZMLB {
-      display: flex;
-      flex-wrap: wrap;
-      background: #ffffff;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 12px;
-      margin-top: 15px;
-    }
-
-    .sc-AykKC.fmcvyS {
-      width: 25%;
-      min-width: 140px;
-      padding: 12px 8px;
-      box-sizing: border-box;
+      background-color: #ffffff;
+      color: var(--text-dark);
       display: flex;
       flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
     }
 
-    .sc-AykKE.jtoCe {
-      font-size: 12px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
+    /* Top Bar */
+    header.navbar {
+      height: 44px;
+      background: #2874f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      color: #ffffff;
+      flex-shrink: 0;
     }
-
-    .sc-AykKE.fhPspo {
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--text-dark);
-    }
-
-    .sc-AykKE.hkQxza {
-      font-weight: 600;
-    }
-
-    .tracking-header-row {
+    .nav-left {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 12px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .nav-badge {
+      background: rgba(255, 255, 255, 0.2);
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
     }
 
-    .masked-tracking-id {
-      font-size: 18px;
-      font-weight: 800;
-      color: #000;
+    /* Layout Frame */
+    .app-layout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 44px);
+      overflow: hidden;
     }
 
-    .status-badge {
-      color: #16a34a;
+    /* Left Sidebar */
+    aside.sidebar {
+      width: 155px;
+      background: #ffffff;
+      border-right: 1px solid #e0e0e0;
+      flex-shrink: 0;
+    }
+    .sidebar-list {
+      list-style: none;
+      padding: 6px 0;
+    }
+    .sidebar-list li a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      color: #555555;
+      text-decoration: none;
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+    .sidebar-list li.active a {
+      background: #eef4ff;
+      color: #2874f0;
+      border-left: 3px solid #2874f0;
+      font-weight: 700;
+    }
+    .sidebar-list .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    /* Main Workspace */
+    main.workspace {
+      flex: 1;
+      padding: 16px 24px;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    /* Header & Scan Field */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .page-title {
       font-size: 14px;
       font-weight: 600;
+      color: #333333;
+    }
+    .action-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-action {
+      background: #ffffff;
+      border: 1px solid #2874f0;
+      color: #2874f0;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .btn-action.primary {
+      background: #2874f0;
+      color: #ffffff;
+    }
+    .scan-box-wrapper {
+      position: relative;
+    }
+    .scan-input-field {
+      height: 28px;
+      width: 210px;
+      border: 1px solid #c2c2c2;
+      border-radius: 2px;
+      padding: 2px 6px;
+      font-size: 12px;
+      outline: none;
+    }
+    .scan-input-field:focus {
+      border-color: #2874f0;
+    }
+
+    /* Metrics Summary Tree */
+    .metrics-summary {
+      margin-bottom: 24px;
+      font-size: 12px;
+      width: 520px;
+    }
+    .metric-line {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      color: #333333;
+    }
+    .metric-line .indent {
+      padding-left: 14px;
+      position: relative;
+    }
+    .metric-line .indent::before {
+      content: "---";
+      position: absolute;
+      left: 0;
+      color: #888888;
+      font-size: 10px;
+      letter-spacing: -1px;
+    }
+    .metric-line.bold {
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    /* Scanned Card Area */
+    .card-heading {
+      font-size: 11px;
+      font-weight: 700;
+      color: #777777;
+      margin-bottom: 6px;
+    }
+    .scanned-details-box {
+      border: 1px solid #dcdcdc;
+      border-radius: 2px;
+      padding: 16px 20px;
+      background: #ffffff;
+      max-width: 900px;
+      min-height: 120px;
+    }
+    .shipment-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+    .tracking-id-text {
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .substatus-tag {
+      font-size: 12px;
+      color: #555555;
+      font-weight: 500;
+    }
+
+    /* Grid for Shipment Data */
+    .shipment-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      row-gap: 12px;
+      column-gap: 20px;
+      font-size: 12px;
+    }
+    .grid-cell {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cell-label {
+      color: #333333;
+      font-weight: 600;
+    }
+
+    /* Highlights & Pill Badges */
+    .hl-yellow {
+      background-color: var(--highlight-yellow);
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 700;
+    }
+    .hl-red {
+      background-color: var(--highlight-red);
+      color: #ffffff;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 700;
+    }
+    .hl-blue {
+      background-color: var(--highlight-blue);
+      color: #ffffff;
+      padding: 1px 6px;
+      border-radius: 2px;
+      font-weight: 700;
+    }
+
+    /* Bottom Confirmation Toast */
+    .bottom-notification {
+      position: absolute;
+      bottom: 20px;
+      left: 24px;
+      background: #1b3a57;
+      color: #ffffff;
+      padding: 6px 14px;
+      font-size: 11px;
+      border-radius: 2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      visibility: hidden;
+    }
+
+    /* Loading Spinner */
+    .spinner-overlay {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 50;
+    }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #2874f0;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Sandbox Simulator Settings Control */
+    .sim-bar {
+      margin-top: 15px;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      color: #475569;
     }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <h2>Pending Shipment Reconciliation</h2>
-  </div>
-
-  <div class="card">
-    <div id="loading-overlay" class="loading-overlay">⚡ Reconciling...</div>
-
-    <div class="scan-box">
-      <label for="scan-input"><strong>Scan Shipment:</strong></label>
-      <input type="text" id="scan-input" placeholder="Scan/Type" autofocus />
-      <button class="btn-rto" onclick="triggerScanSimulation(true)">Simulate RTO Scan</button>
-      <button class="btn-normal" onclick="triggerScanSimulation(false)">Simulate Normal Scan</button>
+  <!-- Top Bar -->
+  <header class="navbar">
+    <div class="nav-left">
+      <span>⚡ eklart</span>
+      <span class="nav-badge">HUB-OPS</span>
     </div>
-
-    <h4 style="margin: 0 0 10px 0; color: #475569;">Last Scanned Shipment</h4>
-
-    <div class="tracking-header-row">
-      <span class="masked-tracking-id" id="masked-id-display">FMPCXXXXXXXXXX</span>
-      <span class="status-badge">Undelivered_SameStateMisroute</span>
+    <div class="nav-right">
+      <span>Station: <strong>DEL/SOUTH</strong></span>
     </div>
+  </header>
 
-    <!-- Dashboard element structure -->
-    <div display="flex" class="sc-AykKC haZMLB" style="flex-wrap: wrap;">
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">CPD</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE iTPsUP">2026-07-30</span></span>
+  <div class="app-layout">
+    <!-- Left Navigation Bar -->
+    <aside class="sidebar">
+      <ul class="sidebar-list">
+        <li><a href="#"><span class="material-symbols-outlined">dashboard</span> Dashboard</a></li>
+        <li><a href="#"><span class="material-symbols-outlined">local_shipping</span> Runsheets</a></li>
+        <li><a href="#"><span class="material-symbols-outlined">move_to_inbox</span> Inbound</a></li>
+        <li class="active"><a href="#"><span class="material-symbols-outlined">barcode_scanner</span> Reconciliation</a></li>
+        <li><a href="#"><span class="material-symbols-outlined">paid</span> Cash Collect</a></li>
+        <li><a href="#"><span class="material-symbols-outlined">support_agent</span> Agents</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Reconciliation Window -->
+    <main class="workspace">
+      
+      <!-- Top Action Bar -->
+      <div class="header-bar">
+        <div class="page-title">Pending Shipment Reconciliation</div>
+        <div class="action-controls">
+          <button class="btn-action">Check Status</button>
+          <button class="btn-action primary">Download List</button>
+          <div class="scan-box-wrapper">
+            <input type="text" id="scan-input" class="scan-input-field" placeholder="Scan Shipment" autofocus autocomplete="off" />
+          </div>
+        </div>
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">RFR</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
+
+      <!-- Quick Simulator Configuration Strip -->
+      <div class="sim-bar">
+        <span><strong>Simulator Options:</strong></span>
+        <label><input type="radio" name="rto_rule" value="random" checked> Random RTO (YES / NO)</label>
+        <label><input type="radio" name="rto_rule" value="always_yes"> Always IS RTO YES</label>
+        <label><input type="radio" name="rto_rule" value="always_no"> Always NO</label>
+        <span style="border-left: 1px solid #ccc; height: 14px;"></span>
+        <label><input type="checkbox" id="chk-today-cpd" checked> Use Today's Date for CPD</label>
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi" id="rto-status-display">No</span></span>
+
+      <!-- Metrics Breakdown -->
+      <div class="metrics-summary">
+        <div class="metric-line">
+          <span>PRC Completed %</span>
+          <span id="txt-prc-pct">85.53%</span>
+        </div>
+        <div class="metric-line">
+          <span class="indent">PRC Completed (Today's expectation)</span>
+          <span id="txt-prc-completed">999</span>
+        </div>
+        <div class="metric-line">
+          <span class="indent">PRC Not Completed (Today's expectation)</span>
+          <span id="txt-prc-not-completed">169</span>
+        </div>
+        <div class="metric-line">
+          <span>All Shipments (Today's expectation)</span>
+          <span>1168</span>
+        </div>
+        <div class="metric-line">
+          <span class="indent">Shipment Received Today (Tomorrow's expectation)</span>
+          <span>111</span>
+        </div>
+        <div class="metric-line">
+          <span class="indent">Scanned Shipments (Tomorrow's expectation)</span>
+          <span id="txt-scanned-tomorrow">110</span>
+        </div>
+        <div class="metric-line bold">
+          <span>Total Shipments</span>
+          <span>1279</span>
+        </div>
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is Prexo</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">No</span>
+
+      <!-- Target DOM Node: Last Scanned Shipment Card -->
+      <div class="card-heading">Last Scanned Shipment</div>
+      
+      <!-- Container matches the extension's target class '.sc-AykKC' -->
+      <div id="shipment-card-container" class="sc-AykKC scanned-details-box">
+        <div class="shipment-meta-row">
+          <span class="tracking-id-text" id="disp-tid">FMPC0000000000</span>
+          <span class="substatus-tag" id="disp-substatus">Undelivered_No_Response</span>
+        </div>
+
+        <div class="shipment-grid">
+          <!-- CPD -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">CPD</span>
+            <span class="hl-red" id="disp-cpd">2026-08-08</span>
+          </div>
+
+          <!-- RFR -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">RFR</span>
+            <span id="disp-rfr">2026-08-07</span>
+          </div>
+
+          <!-- IS RTO (Targeted by extension MutationObserver) -->
+          <div class="grid-cell fmcvyS" id="rto-container-cell">
+            <span class="cell-label">IS RTO</span>
+            <span class="hl-yellow" id="disp-rto-val">Yes</span>
+          </div>
+
+          <!-- IS PREXO -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">IS PREXO</span>
+            <span id="disp-prexo">No</span>
+          </div>
+
+          <!-- ITEM TYPE -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">ITEM TYPE</span>
+            <span id="disp-item-type">ethnic_set</span>
+          </div>
+
+          <!-- PRIORITY -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">PRIORITY</span>
+            <span class="hl-blue" id="disp-priority">P2</span>
+          </div>
+
+          <!-- IS RTO CV -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">IS RTO CV</span>
+            <span id="disp-rto-cv">No</span>
+          </div>
+
+          <!-- BIN ID -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">BIN ID</span>
+            <span id="disp-bin">R6</span>
+          </div>
+
+          <!-- CLUSTER ID -->
+          <div class="grid-cell fmcvyS">
+            <span class="cell-label">CLUSTER ID</span>
+            <span id="disp-cluster">-</span>
+          </div>
+        </div>
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Item Type</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">headphone</span>
+
+      <!-- Center Loading Spinner -->
+      <div id="loading-spinner" class="spinner-overlay">
+        <div class="spinner"></div>
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Priority</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" font-weight="600" class="sc-AykKE hkQxza">P2</span></span>
+
+      <!-- Bottom Toast Notification -->
+      <div id="footer-toast" class="bottom-notification">
+        Shipment has already been scanned
       </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Is RTO CV</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo"><span color="#000000" class="sc-AykKE dbGROi">No</span></span>
-      </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Bin ID</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
-      </div>
-      <div class="sc-AykKC fmcvyS" style="width: 25%; min-width: 140px; padding: 12px 8px;">
-        <span font-size="22px" color="#5e6c84" class="sc-AykKE jtoCe" style="text-transform: uppercase; letter-spacing: 0.5px;">Cluster ID</span>
-        <span font-size="22px" font-weight="500" class="sc-AykKE fhPspo">-</span>
-      </div>
-    </div>
+
+    </main>
   </div>
 
   <script>
-    const input = document.getElementById('scan-input');
-    const rtoStatusDisplay = document.getElementById('rto-status-display');
-    const maskedIdDisplay = document.getElementById('masked-id-display');
-    const overlay = document.getElementById('loading-overlay');
+    const scanInput = document.getElementById('scan-input');
+    const spinner = document.getElementById('loading-spinner');
+    const footerToast = document.getElementById('footer-toast');
+    const cardContainer = document.getElementById('shipment-card-container');
 
-    function triggerScanSimulation(isRTO, customId) {
-      const rawId = (customId || input.value.trim() || ('CMDDC' + Math.floor(100000000 + Math.random() * 900000000))).toUpperCase();
-      
-      // Masking logic: Keeps first 4 characters, replaces every remaining character with 'X'
-      let maskedText = rawId;
-      if (rawId.length > 4) {
-        const prefix = rawId.substring(0, 4);
-        const maskedSuffix = 'X'.repeat(rawId.length - 4);
-        maskedText = prefix + maskedSuffix;
-      }
+    const txtCompleted = document.getElementById('txt-prc-completed');
+    const txtTomorrow = document.getElementById('txt-scanned-tomorrow');
 
-      overlay.classList.add('active');
+    let countCompleted = 999;
+    let countTomorrow = 110;
 
-      setTimeout(() => {
-        overlay.classList.remove('active');
-        maskedIdDisplay.textContent = maskedText;
-        rtoStatusDisplay.textContent = isRTO ? 'Yes' : 'No';
-      }, 150);
+    const substatusList = ['Undelivered_No_Response', 'Customer_Refused', 'Door_Locked', 'Rescheduled'];
+    const itemTypes = ['ethnic_set', 'footwear', 'watch', 'smartphone', 'home_furnishing'];
+    const priorities = ['P1', 'P2', 'P3'];
+    const bins = ['R1', 'R6', 'B2', 'K4', 'C8'];
+
+    function getFormattedDate(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
     }
 
-    input.addEventListener('keydown', (e) => {
+    function executeScan(barcodeValue) {
+      const tid = barcodeValue.trim();
+      if (!tid) return;
+
+      // 1. Show dashboard processing spinner
+      spinner.style.display = 'block';
+      footerToast.style.visibility = 'hidden';
+
+      // 2. Simulate 200-300ms network round-trip & DOM redraw
+      setTimeout(() => {
+        spinner.style.display = 'none';
+
+        // Determine IS RTO state
+        const rtoRule = document.querySelector('input[name="rto_rule"]:checked').value;
+        let isRto = false;
+        if (rtoRule === 'always_yes') isRto = true;
+        else if (rtoRule === 'always_no') isRto = false;
+        else isRto = Math.random() < 0.5; // 50/50 Chance
+
+        // Determine CPD Date
+        const useTodayCpd = document.getElementById('chk-today-cpd').checked;
+        const cpdDate = useTodayCpd 
+          ? getFormattedDate(0) 
+          : getFormattedDate(Math.floor(Math.random() * 5) - 2);
+
+        const rfrDate = getFormattedDate(-1);
+        const substatus = substatusList[Math.floor(Math.random() * substatusList.length)];
+        const itemType = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+        const priority = priorities[Math.floor(Math.random() * priorities.length)];
+        const bin = bins[Math.floor(Math.random() * bins.length)];
+        const isRtoCv = Math.random() < 0.2 ? 'Yes' : 'No';
+
+        // 3. Rebuild the card DOM dynamically to fire real MutationObserver triggers
+        cardContainer.innerHTML = `
+          <div class="shipment-meta-row">
+            <span class="tracking-id-text">${tid}</span>
+            <span class="substatus-tag">${substatus}</span>
+          </div>
+
+          <div class="shipment-grid">
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">CPD</span>
+              <span class="hl-red">${cpdDate}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">RFR</span>
+              <span>${rfrDate}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">IS RTO</span>
+              ${isRto ? '<span class="hl-yellow">Yes</span>' : '<span>No</span>'}
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">IS PREXO</span>
+              <span>No</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">ITEM TYPE</span>
+              <span>${itemType}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">PRIORITY</span>
+              <span class="hl-blue">${priority}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">IS RTO CV</span>
+              <span>${isRtoCv}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">BIN ID</span>
+              <span>${bin}</span>
+            </div>
+
+            <div class="grid-cell fmcvyS">
+              <span class="cell-label">CLUSTER ID</span>
+              <span>-</span>
+            </div>
+          </div>
+        `;
+
+        // 4. Update count metrics
+        countCompleted++;
+        countTomorrow++;
+        txtCompleted.textContent = countCompleted;
+        txtTomorrow.textContent = countTomorrow;
+
+        // 5. Flash bottom notification banner
+        footerToast.style.visibility = 'visible';
+
+        // 6. Clear input box for next barcode scan
+        scanInput.value = '';
+      }, 250);
+    }
+
+    // Capture standard keyboard Enter event
+    scanInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        const val = input.value.trim();
-        if (!val) return;
-        triggerScanSimulation(val.toLowerCase().includes('rto'), val);
-        input.value = '';
+        e.preventDefault();
+        executeScan(scanInput.value);
+      }
+    });
+
+    // Capture synthetic input events dispatched from automated scripts
+    scanInput.addEventListener('change', () => {
+      if (scanInput.value.trim()) {
+        executeScan(scanInput.value);
       }
     });
   </script>
-
 </body>
 </html>
