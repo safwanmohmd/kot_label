@@ -2,624 +2,769 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EKL Last Mile - Pending Shipment Reconciliation</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-  
+  <title>eStart Logistics Portal - Runsheet Simulation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    :root {
-      --primary-blue: #2874f0;
-      --nav-blue: #2455a8;
-      --bg-gray: #f1f3f6;
-      --border-gray: #dfe1e6;
-      --text-dark: #212121;
-      --text-muted: #5e6c84;
-      --highlight-yellow: #fff782;
-      --highlight-red: #ff8b8b;
-      --highlight-blue: #3d8aff;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-
     body {
-      background-color: #ffffff;
-      color: var(--text-dark);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-      font-size: 13px;
+      font-family: Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f1f3f7;
     }
-
-    /* Top Bar */
-    header.navbar {
-      height: 44px;
-      background: #2874f0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      color: #ffffff;
-      flex-shrink: 0;
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
     }
-    .nav-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-weight: 700;
-      font-size: 16px;
-    }
-    .nav-badge {
-      background: rgba(255, 255, 255, 0.2);
-      font-size: 11px;
-      padding: 2px 6px;
-      border-radius: 2px;
-    }
-    .nav-right {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 12px;
-    }
-
-    /* Layout Frame */
-    .app-layout {
-      display: flex;
-      flex: 1;
-      height: calc(100vh - 44px);
-      overflow: hidden;
-    }
-
-    /* Left Sidebar */
-    aside.sidebar {
-      width: 155px;
-      background: #ffffff;
-      border-right: 1px solid #e0e0e0;
-      flex-shrink: 0;
-    }
-    .sidebar-list {
-      list-style: none;
-      padding: 6px 0;
-    }
-    .sidebar-list li a {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      color: #555555;
-      text-decoration: none;
-      font-size: 11.5px;
-      font-weight: 500;
-    }
-    .sidebar-list li.active a {
-      background: #eef4ff;
-      color: #2874f0;
-      border-left: 3px solid #2874f0;
-      font-weight: 700;
-    }
-    .sidebar-list .material-symbols-outlined {
-      font-size: 16px;
-    }
-
-    /* Main Workspace */
-    main.workspace {
-      flex: 1;
-      padding: 16px 24px;
-      overflow-y: auto;
-      position: relative;
-    }
-
-    /* Header & Scan Field */
-    .header-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .page-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #333333;
-    }
-    .action-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .btn-action {
-      background: #ffffff;
-      border: 1px solid #2874f0;
-      color: #2874f0;
-      padding: 4px 10px;
-      font-size: 11px;
-      font-weight: 500;
-      border-radius: 2px;
-      cursor: pointer;
-    }
-    .btn-action.primary {
-      background: #2874f0;
-      color: #ffffff;
-    }
-    .scan-box-wrapper {
-      position: relative;
-    }
-    .scan-input-field {
-      height: 28px;
-      width: 210px;
-      border: 1px solid #c2c2c2;
-      border-radius: 2px;
-      padding: 2px 6px;
-      font-size: 12px;
-      outline: none;
-    }
-    .scan-input-field:focus {
-      border-color: #2874f0;
-    }
-
-    /* Metrics Summary Tree */
-    .metrics-summary {
-      margin-bottom: 24px;
-      font-size: 12px;
-      width: 520px;
-    }
-    .metric-line {
-      display: flex;
-      justify-content: space-between;
-      padding: 3px 0;
-      color: #333333;
-    }
-    .metric-line .indent {
-      padding-left: 14px;
-      position: relative;
-    }
-    .metric-line .indent::before {
-      content: "---";
-      position: absolute;
-      left: 0;
-      color: #888888;
-      font-size: 10px;
-      letter-spacing: -1px;
-    }
-    .metric-line.bold {
-      font-weight: 700;
-      margin-top: 4px;
-    }
-
-    /* Scanned Card Area */
-    .card-heading {
-      font-size: 11px;
-      font-weight: 700;
-      color: #777777;
-      margin-bottom: 6px;
-    }
-    .scanned-details-box {
-      border: 1px solid #dcdcdc;
-      border-radius: 2px;
-      padding: 16px 20px;
-      background: #ffffff;
-      max-width: 900px;
-      min-height: 120px;
-    }
-    .shipment-meta-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 14px;
-      font-size: 14px;
-    }
-    .tracking-id-text {
-      font-weight: 700;
-      letter-spacing: 0.5px;
-    }
-    .substatus-tag {
-      font-size: 12px;
-      color: #555555;
-      font-weight: 500;
-    }
-
-    /* Grid for Shipment Data */
-    .shipment-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      row-gap: 12px;
-      column-gap: 20px;
-      font-size: 12px;
-    }
-    .grid-cell {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .cell-label {
-      color: #333333;
-      font-weight: 600;
-    }
-
-    /* Highlights & Pill Badges */
-    .hl-yellow {
-      background-color: var(--highlight-yellow);
-      padding: 1px 5px;
-      border-radius: 2px;
-      font-weight: 700;
-    }
-    .hl-red {
-      background-color: var(--highlight-red);
-      color: #ffffff;
-      padding: 1px 5px;
-      border-radius: 2px;
-      font-weight: 700;
-    }
-    .hl-blue {
-      background-color: var(--highlight-blue);
-      color: #ffffff;
-      padding: 1px 6px;
-      border-radius: 2px;
-      font-weight: 700;
-    }
-
-    /* Bottom Confirmation Toast */
-    .bottom-notification {
-      position: absolute;
-      bottom: 20px;
-      left: 24px;
-      background: #1b3a57;
-      color: #ffffff;
-      padding: 6px 14px;
-      font-size: 11px;
-      border-radius: 2px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      visibility: hidden;
-    }
-
-    /* Loading Spinner */
-    .spinner-overlay {
-      display: none;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 50;
-    }
-    .spinner {
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #2874f0;
-      border-radius: 50%;
-      width: 26px;
-      height: 26px;
-      animation: spin 0.6s linear infinite;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    /* Sandbox Simulator Settings Control */
-    .sim-bar {
-      margin-top: 15px;
-      padding: 8px 12px;
-      background: #f8fafc;
-      border: 1px dashed #cbd5e1;
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cfd6df;
       border-radius: 4px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 11px;
-      color: #475569;
     }
   </style>
 </head>
-<body>
+<body class="h-screen flex flex-col select-none overflow-hidden text-xs text-gray-700">
 
-  <!-- Top Bar -->
-  <header class="navbar">
-    <div class="nav-left">
-      <span>⚡ eklart</span>
-      <span class="nav-badge">HUB-OPS</span>
+  <!-- Top Hub Bar -->
+  <header class="h-10 bg-[#1967d2] text-white flex items-center justify-between px-3 shrink-0 shadow-sm">
+    <div class="flex items-center space-x-3">
+      <div class="flex items-center space-x-1.5 font-bold tracking-tight text-sm">
+        <span class="text-white text-base font-extrabold italic">e<span class="text-yellow-400">Start</span></span>
+      </div>
+      <div class="h-4 w-[1px] bg-blue-300 opacity-40"></div>
+      <div class="flex items-center space-x-2 text-[11px]">
+        <span class="font-mono bg-blue-800 px-2 py-0.5 rounded font-semibold text-white tracking-wider">220393</span>
+        <span class="text-blue-100 hidden sm:inline">HUB PORTAL</span>
+      </div>
     </div>
-    <div class="nav-right">
-      <span>Station: <strong>DEL/SOUTH</strong></span>
+
+    <div class="flex items-center space-x-4 text-[11px]">
+      <div class="flex items-center space-x-1 cursor-pointer hover:text-blue-200">
+        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+        <span>Search</span>
+      </div>
+      <div class="flex items-center space-x-1.5 border-l border-blue-400 pl-3">
+        <span class="w-5 h-5 rounded-full bg-blue-900 flex items-center justify-center font-bold text-[10px]">H</span>
+        <span class="font-medium">220393_hub</span>
+      </div>
     </div>
   </header>
 
-  <div class="app-layout">
-    <!-- Left Navigation Bar -->
-    <aside class="sidebar">
-      <ul class="sidebar-list">
-        <li><a href="#"><span class="material-symbols-outlined">dashboard</span> Dashboard</a></li>
-        <li><a href="#"><span class="material-symbols-outlined">local_shipping</span> Runsheets</a></li>
-        <li><a href="#"><span class="material-symbols-outlined">move_to_inbox</span> Inbound</a></li>
-        <li class="active"><a href="#"><span class="material-symbols-outlined">barcode_scanner</span> Reconciliation</a></li>
-        <li><a href="#"><span class="material-symbols-outlined">paid</span> Cash Collect</a></li>
-        <li><a href="#"><span class="material-symbols-outlined">support_agent</span> Agents</a></li>
-      </ul>
+  <div class="flex flex-1 overflow-hidden">
+    
+    <!-- Left Navigation Sidebar -->
+    <aside class="w-48 bg-[#fdfdfd] border-r border-gray-300 flex flex-col justify-between shrink-0 select-none">
+      <div class="py-1 overflow-y-auto custom-scrollbar">
+        <nav class="text-[11px] text-gray-600 font-medium">
+          <a href="javascript:void(0)" class="flex items-center px-3 py-2 hover:bg-gray-100 border-l-4 border-transparent text-gray-500">
+            <i class="fa-solid fa-gauge-high w-5 text-gray-400"></i>
+            <span>Dashboard</span>
+          </a>
+
+          <a href="javascript:void(0)" onclick="navigateTo('list')" id="nav-runsheets" class="flex items-center px-3 py-2 bg-blue-50 text-blue-700 font-semibold border-l-4 border-blue-600">
+            <i class="fa-solid fa-clipboard-list w-5 text-blue-600"></i>
+            <span>Runsheets</span>
+          </a>
+
+          <a href="javascript:void(0)" class="flex items-center px-3 py-2 hover:bg-gray-100 border-l-4 border-transparent text-gray-600">
+            <i class="fa-regular fa-user w-5 text-gray-400"></i>
+            <span>Agents summary</span>
+          </a>
+
+          <a href="javascript:void(0)" class="flex items-center px-3 py-2 hover:bg-gray-100 border-l-4 border-transparent text-gray-600">
+            <i class="fa-solid fa-boxes-stacked w-5 text-gray-400"></i>
+            <span>Capacity</span>
+          </a>
+
+          <a href="javascript:void(0)" class="flex items-center px-3 py-2 hover:bg-gray-100 border-l-4 border-transparent text-gray-600">
+            <i class="fa-solid fa-inbox w-5 text-gray-400"></i>
+            <span>Inbound</span>
+          </a>
+        </nav>
+      </div>
+      <div class="px-3 py-2 border-t border-gray-200 text-[10px] text-gray-400 flex items-center justify-between">
+        <span>Hub: 220393</span>
+        <span>v3.41-sim</span>
+      </div>
     </aside>
 
-    <!-- Main Reconciliation Window -->
-    <main class="workspace">
+    <!-- Main Workspace -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-[#fafbfc]">
       
-      <!-- Top Action Bar -->
-      <div class="header-bar">
-        <div class="page-title">Pending Shipment Reconciliation</div>
-        <div class="action-controls">
-          <button class="btn-action">Check Status</button>
-          <button class="btn-action primary">Download List</button>
-          <div class="scan-box-wrapper">
-            <input type="text" id="scan-input" class="scan-input-field" placeholder="Scan Shipment" autofocus autocomplete="off" />
+      <!-- VIEW 1: ACTIVE RUNSHEETS LIST -->
+      <section id="view-runsheet-list" class="flex-1 flex flex-col overflow-hidden">
+        <div class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
+          <div>
+            <h1 class="text-base font-bold text-gray-800">Runsheets</h1>
+            <p class="text-[11px] text-gray-500">Manage, create and dispatch runsheets</p>
           </div>
+
+          <div class="flex items-center space-x-2">
+            <button onclick="openBulkModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded flex items-center space-x-1.5 shadow-sm transition">
+              <i class="fa-solid fa-bolt text-[10px]"></i>
+              <span>Bulk Auto-Runsheet (1 ID = 1 RS)</span>
+            </button>
+
+            <button onclick="navigateTo('create')" class="bg-[#1967d2] hover:bg-blue-700 text-white font-semibold text-xs px-3.5 py-1.5 rounded flex items-center space-x-1.5 shadow-sm transition">
+              <i class="fa-solid fa-plus text-[10px]"></i>
+              <span>Create Runsheet</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="bg-white px-4 py-2 border-b border-gray-200 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-3 w-1/3">
+            <div class="relative w-full">
+              <input type="text" placeholder="Search Runsheet ID or Tracking ID..." class="w-full border border-gray-300 rounded px-2.5 py-1 pl-7 text-[11px] focus:outline-none focus:border-blue-500" />
+              <i class="fa-solid fa-magnifying-glass absolute left-2 top-2 text-gray-400 text-[10px]"></i>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 text-[11px]">
+            <span class="text-gray-500 font-medium">Total:</span>
+            <span class="px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-bold"><span id="count-all">0</span> Runsheets</span>
+          </div>
+        </div>
+
+        <!-- Runsheet Manifest Table -->
+        <div class="flex-1 overflow-auto custom-scrollbar p-3">
+          <div class="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr class="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200 uppercase tracking-wider text-[10px]">
+                  <th class="py-2.5 px-3">#</th>
+                  <th class="py-2.5 px-3">Wishmaster</th>
+                  <th class="py-2.5 px-3">Runsheet ID</th>
+                  <th class="py-2.5 px-3">Count</th>
+                  <th class="py-2.5 px-3">Tracking ID(s)</th>
+                  <th class="py-2.5 px-3">Vehicle</th>
+                  <th class="py-2.5 px-3">Time</th>
+                  <th class="py-2.5 px-3">Status</th>
+                  <th class="py-2.5 px-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="runsheet-list-body" class="divide-y divide-gray-100 text-gray-700"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: CREATE RUNSHEET WORKSPACE -->
+      <section id="view-runsheet-create" class="hidden flex-1 flex flex-col overflow-hidden bg-white">
+        <div class="border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 bg-white">
+          <div class="flex items-center space-x-3">
+            <button onclick="navigateTo('list')" class="text-gray-500 hover:text-gray-800 text-sm">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h1 class="text-base font-bold text-gray-800 tracking-tight">Create Runsheet</h1>
+          </div>
+
+          <div class="text-right">
+            <div class="text-base font-extrabold text-gray-800" id="counter-top">0</div>
+            <div class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Number of Shipments</div>
+          </div>
+        </div>
+
+        <!-- 3 Inputs Row: Searchable Wishmaster Input -->
+        <div class="border-b border-gray-200 px-6 py-3 bg-white grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0 relative z-20">
+          
+          <!-- Searchable Agent Dropdown Field -->
+          <div class="relative">
+            <label class="block text-[11px] font-semibold text-gray-600 mb-1">
+              Assign Agent <span class="text-red-500">*</span>
+            </label>
+            <div class="relative">
+              <input 
+                id="agent-search-input" 
+                type="text" 
+                placeholder="Search Wishmaster Name / ID..." 
+                autocomplete="off"
+                class="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-800 bg-white focus:outline-none focus:border-blue-500 pr-7"
+              />
+              <span id="agent-dropdown-toggle" class="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none text-[10px]">
+                <i class="fa-solid fa-chevron-down"></i>
+              </span>
+            </div>
+
+            <!-- Autocomplete Results Dropdown Menu -->
+            <div id="agent-dropdown-list" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto custom-scrollbar z-50 text-xs divide-y divide-gray-100"></div>
+          </div>
+
+          <!-- Dynamic POS Badge -->
+          <div>
+            <label class="block text-[11px] font-semibold text-gray-600 mb-1">Assign POS</label>
+            <div id="pos-display" class="border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-500 bg-gray-50 font-medium">
+              No POS device found
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-semibold text-gray-600 mb-1">Assign Vehicle Type</label>
+            <select id="vehicle-select" class="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:border-blue-500">
+              <option value="Bike">Bike</option>
+              <option value="Van">Van</option>
+              <option value="Electric Scooter (EV)">Electric Scooter (EV)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Center Scan View Container -->
+        <div class="flex-1 overflow-auto p-4 flex flex-col relative z-0">
+          <div id="empty-state" class="m-auto flex flex-col items-center justify-center text-center p-8">
+            <div class="w-20 h-16 bg-[#fae8d8] rounded-md border border-[#e0c3ab] flex items-center justify-center mb-3 shadow-sm">
+              <i class="fa-solid fa-box-archive text-2xl text-[#b45309]"></i>
+            </div>
+            <h2 class="text-sm font-bold text-gray-800">Scan shipment to add it in runsheet</h2>
+            <p class="text-[11px] text-gray-500 max-w-sm mt-1 mb-4 leading-relaxed">
+              Add shipments to the runsheet through scanning or manually by entering in the input below
+            </p>
+            <button onclick="focusBarcodeScan()" class="bg-[#1967d2] hover:bg-blue-700 text-white font-medium text-xs px-4 py-1.5 rounded shadow-sm transition">
+              Start Scan
+            </button>
+          </div>
+
+          <div id="scanned-table-container" class="hidden flex-1 overflow-auto custom-scrollbar">
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr class="bg-gray-100 text-gray-600 uppercase text-[10px] font-semibold border-b border-gray-200">
+                  <th class="py-2 px-3">Tracking ID</th>
+                  <th class="py-2 px-3">Consignee Address</th>
+                  <th class="py-2 px-3">Pincode</th>
+                  <th class="py-2 px-3">Weight</th>
+                  <th class="py-2 px-3">Payment</th>
+                  <th class="py-2 px-3">Action</th>
+                </tr>
+              </thead>
+              <tbody id="scanned-rows" class="divide-y divide-gray-100 text-gray-700 font-normal"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Bottom Action Bar -->
+        <div class="border-t border-gray-200 px-6 py-2.5 bg-[#fcfcfd] flex items-center justify-between shrink-0">
+          <div class="flex items-center space-x-2 w-2/3 max-w-lg">
+            <input id="barcode-input" type="text" placeholder="Scan or enter Tracking ID..." autocomplete="off" class="flex-1 border border-gray-300 rounded px-3 py-1.5 text-xs font-mono uppercase focus:outline-none focus:border-blue-500 bg-white" />
+            <button onclick="submitScan()" class="bg-[#1967d2] hover:bg-blue-700 text-white text-xs font-semibold px-4 py-1.5 rounded transition">Scan</button>
+          </div>
+
+          <div class="flex items-center space-x-2.5">
+            <button onclick="navigateTo('list')" class="text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1.5">Discard</button>
+            
+            <!-- Hidden by default until 1 or more shipments are added -->
+            <div id="action-buttons-group" class="hidden flex items-center space-x-2.5">
+              <button onclick="saveRunsheet('DRAFT')" class="bg-white border border-[#1967d2] text-[#1967d2] hover:bg-blue-50 font-semibold text-xs px-4 py-1.5 rounded shadow-sm transition">Save</button>
+              <button onclick="saveRunsheet('CONFIRM')" class="bg-[#1967d2] hover:bg-blue-800 text-white font-semibold text-xs px-4 py-1.5 rounded shadow-sm transition">Save & Confirm</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right Side Barcode Emulation Panel (12 TIDs) -->
+    <div class="w-64 bg-gray-50 border-l border-gray-200 p-3 hidden xl:flex flex-col text-[11px] shrink-0 overflow-y-auto custom-scrollbar">
+      <div class="font-bold text-gray-700 mb-1 flex items-center justify-between">
+        <span>Inventory TIDs (12)</span>
+        <button onclick="copyAllTids()" class="text-[9px] bg-blue-100 hover:bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">Copy All</button>
+      </div>
+      <p class="text-[10px] text-gray-500 mb-2">Click any TID to simulate scan:</p>
+
+      <div class="space-y-1.5 font-mono" id="tid-button-container"></div>
+    </div>
+
+  </div>
+
+  <!-- BULK AUTOMATION MODAL -->
+  <div id="bulk-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-lg shadow-2xl overflow-hidden border border-gray-200">
+      <div class="bg-indigo-700 px-4 py-3 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-bolt text-base"></i>
+          <h3 class="font-bold text-sm">Bulk Auto-Runsheet (1 TID = 1 RS)</h3>
+        </div>
+        <button onclick="closeBulkModal()" class="text-white/80 hover:text-white text-base">✕</button>
+      </div>
+
+      <div class="p-5 space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-semibold text-gray-700 mb-1">Target Wishmaster</label>
+          <select id="bulk-agent" class="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-800">
+            <option value="Abdul Basith (WM1099)">Abdul Basith (WM1099) - POS-MH4410</option>
+            <option value="Mohammed Rishad (WM1102)">Mohammed Rishad (WM1102) - POS-MH8892</option>
+            <option value="Salman Faris (WM1105)">Salman Faris (WM1105) - POS-MH9102</option>
+            <option value="Anees Rahman (WM1210)">Anees Rahman (WM1210) - POS-MH5521</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-gray-700 mb-1">Vehicle</label>
+            <select id="bulk-vehicle" class="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-800">
+              <option value="Bike">Bike</option>
+              <option value="Van">Van</option>
+              <option value="Electric Scooter (EV)">EV</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-gray-700 mb-1">Status Mode</label>
+            <select id="bulk-status" class="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-800">
+              <option value="DRAFT">Save (Draft)</option>
+              <option value="DISPATCHED">Save & Confirm (Dispatched)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="block text-[11px] font-semibold text-gray-700">Paste Tracking IDs:</label>
+            <span id="bulk-id-counter" class="text-[10px] font-mono text-gray-400">0 IDs detected</span>
+          </div>
+          <textarea id="bulk-tracking-input" rows="5" class="w-full font-mono text-xs border border-gray-300 rounded p-2.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none uppercase" oninput="updateBulkCount()"></textarea>
+        </div>
+
+        <div id="bulk-log-container" class="hidden">
+          <div class="text-[10px] font-bold uppercase text-gray-400 mb-1">Creation Log:</div>
+          <div id="bulk-log" class="bg-gray-900 text-green-400 font-mono text-[10px] p-2 rounded h-24 overflow-y-auto space-y-0.5"></div>
         </div>
       </div>
 
-      <!-- Quick Simulator Configuration Strip -->
-      <div class="sim-bar">
-        <span><strong>Simulator Options:</strong></span>
-        <label><input type="radio" name="rto_rule" value="random" checked> Random RTO (YES / NO)</label>
-        <label><input type="radio" name="rto_rule" value="always_yes"> Always IS RTO YES</label>
-        <label><input type="radio" name="rto_rule" value="always_no"> Always NO</label>
-        <span style="border-left: 1px solid #ccc; height: 14px;"></span>
-        <label><input type="checkbox" id="chk-today-cpd" checked> Use Today's Date for CPD</label>
+      <div class="bg-gray-50 px-4 py-2.5 border-t border-gray-200 flex items-center justify-between">
+        <button onclick="closeBulkModal()" class="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+        <button id="btn-run-bulk" onclick="executeBatchAutomation()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-1.5 rounded flex items-center space-x-1.5 shadow">
+          <i class="fa-solid fa-play text-[10px]"></i>
+          <span>Run Automation</span>
+        </button>
       </div>
+    </div>
+  </div>
 
-      <!-- Metrics Breakdown -->
-      <div class="metrics-summary">
-        <div class="metric-line">
-          <span>PRC Completed %</span>
-          <span id="txt-prc-pct">85.53%</span>
-        </div>
-        <div class="metric-line">
-          <span class="indent">PRC Completed (Today's expectation)</span>
-          <span id="txt-prc-completed">999</span>
-        </div>
-        <div class="metric-line">
-          <span class="indent">PRC Not Completed (Today's expectation)</span>
-          <span id="txt-prc-not-completed">169</span>
-        </div>
-        <div class="metric-line">
-          <span>All Shipments (Today's expectation)</span>
-          <span>1168</span>
-        </div>
-        <div class="metric-line">
-          <span class="indent">Shipment Received Today (Tomorrow's expectation)</span>
-          <span>111</span>
-        </div>
-        <div class="metric-line">
-          <span class="indent">Scanned Shipments (Tomorrow's expectation)</span>
-          <span id="txt-scanned-tomorrow">110</span>
-        </div>
-        <div class="metric-line bold">
-          <span>Total Shipments</span>
-          <span>1279</span>
-        </div>
-      </div>
-
-      <!-- Target DOM Node: Last Scanned Shipment Card -->
-      <div class="card-heading">Last Scanned Shipment</div>
-      
-      <!-- Container matches the extension's target class '.sc-AykKC' -->
-      <div id="shipment-card-container" class="sc-AykKC scanned-details-box">
-        <div class="shipment-meta-row">
-          <span class="tracking-id-text" id="disp-tid">FMPC0000000000</span>
-          <span class="substatus-tag" id="disp-substatus">Undelivered_No_Response</span>
-        </div>
-
-        <div class="shipment-grid">
-          <!-- CPD -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">CPD</span>
-            <span class="hl-red" id="disp-cpd">2026-08-08</span>
-          </div>
-
-          <!-- RFR -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">RFR</span>
-            <span id="disp-rfr">2026-08-07</span>
-          </div>
-
-          <!-- IS RTO (Targeted by extension MutationObserver) -->
-          <div class="grid-cell fmcvyS" id="rto-container-cell">
-            <span class="cell-label">IS RTO</span>
-            <span class="hl-yellow" id="disp-rto-val">Yes</span>
-          </div>
-
-          <!-- IS PREXO -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">IS PREXO</span>
-            <span id="disp-prexo">No</span>
-          </div>
-
-          <!-- ITEM TYPE -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">ITEM TYPE</span>
-            <span id="disp-item-type">ethnic_set</span>
-          </div>
-
-          <!-- PRIORITY -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">PRIORITY</span>
-            <span class="hl-blue" id="disp-priority">P2</span>
-          </div>
-
-          <!-- IS RTO CV -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">IS RTO CV</span>
-            <span id="disp-rto-cv">No</span>
-          </div>
-
-          <!-- BIN ID -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">BIN ID</span>
-            <span id="disp-bin">R6</span>
-          </div>
-
-          <!-- CLUSTER ID -->
-          <div class="grid-cell fmcvyS">
-            <span class="cell-label">CLUSTER ID</span>
-            <span id="disp-cluster">-</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Center Loading Spinner -->
-      <div id="loading-spinner" class="spinner-overlay">
-        <div class="spinner"></div>
-      </div>
-
-      <!-- Bottom Toast Notification -->
-      <div id="footer-toast" class="bottom-notification">
-        Shipment has already been scanned
-      </div>
-
-    </main>
+  <!-- Bottom-Left Toast Notification -->
+  <div id="toast-banner" class="fixed bottom-8 left-6 transform translate-y-20 opacity-0 transition-all duration-300 ease-out z-50 flex items-center bg-[#1f2937] text-white text-[11px] px-3.5 py-2 rounded shadow-xl border border-gray-700">
+    <i id="toast-icon" class="fa-solid fa-circle-exclamation text-red-400 mr-2 text-xs"></i>
+    <span id="toast-msg">Notification</span>
   </div>
 
   <script>
-    const scanInput = document.getElementById('scan-input');
-    const spinner = document.getElementById('loading-spinner');
-    const footerToast = document.getElementById('footer-toast');
-    const cardContainer = document.getElementById('shipment-card-container');
+    // Master Wishmasters Directory
+    const wishmastersList = [
+      { id: "WM1099", name: "Abdul Basith", posId: "POS-MH4410" },
+      { id: "WM1102", name: "Mohammed Rishad", posId: "POS-MH8892" },
+      { id: "WM1105", name: "Salman Faris", posId: "POS-MH9102" },
+      { id: "WM1210", name: "Anees Rahman", posId: "POS-MH5521" }
+    ];
 
-    const txtCompleted = document.getElementById('txt-prc-completed');
-    const txtTomorrow = document.getElementById('txt-scanned-tomorrow');
+    let selectedAgent = null;
 
-    let countCompleted = 999;
-    let countTomorrow = 110;
+    const extendedDatabase = {
+      "MPP4241771961": { id: "MPP4241771961", address: "Room #4B, Rose Villa, Downhill PO", pincode: "676519", weight: "0.45 kg", payment: "Prepaid" },
+      "FMPC009182371": { id: "FMPC009182371", address: "House 12/420, Near Al-Fitrah School, Jubilee Road", pincode: "676503", weight: "1.20 kg", payment: "COD (₹ 1,499.00)" },
+      "MPP9824124239": { id: "MPP9824124239", address: "Shop 4, Grand Plaza, Kizhakkethala, Up Hill", pincode: "676505", weight: "0.30 kg", payment: "Prepaid" },
+      "MPP9824124559": { id: "MPP9824124559", address: "Green Valley Apartments, Block C - 201", pincode: "676505", weight: "2.15 kg", payment: "COD (₹ 650.00)" },
+      "MPP9824124110": { id: "MPP9824124110", address: "Blossom Villa, Court Road, Manjeri", pincode: "676121", weight: "0.85 kg", payment: "Prepaid" },
+      "MPP4241772004": { id: "MPP4241772004", address: "Flat 3A, Skyline Riverview, Melmuri", pincode: "676517", weight: "1.10 kg", payment: "COD (₹ 2,199.00)" },
+      "FMPC009182490": { id: "FMPC009182490", address: "Door No 7/114, Bypass Junction, Perinthalmanna", pincode: "679322", weight: "0.40 kg", payment: "Prepaid" },
+      "MPP9824124672": { id: "MPP9824124672", address: "Jasmine Cottage, Near KSRTC Bus Stand, Up Hill", pincode: "676505", weight: "0.95 kg", payment: "COD (₹ 820.00)" },
+      "MPP4241772188": { id: "MPP4241772188", address: "Hilite Residency, 2nd Floor, Kottakkal Town", pincode: "676503", weight: "1.75 kg", payment: "Prepaid" },
+      "FMPC009182512": { id: "FMPC009182512", address: "Al-Shifa Manzil, Panakkad Road, Downhill", pincode: "676519", weight: "0.60 kg", payment: "COD (₹ 1,150.00)" },
+      "MPP9824124801": { id: "MPP9824124801", address: "Metro Arcade, Room #12, Calicut Road", pincode: "676505", weight: "0.35 kg", payment: "Prepaid" },
+      "MPP4241772295": { id: "MPP4241772295", address: "White House, Valiyangadi, Malappuram", pincode: "676505", weight: "2.40 kg", payment: "COD (₹ 3,490.00)" }
+    };
 
-    const substatusList = ['Undelivered_No_Response', 'Customer_Refused', 'Door_Locked', 'Rescheduled'];
-    const itemTypes = ['ethnic_set', 'footwear', 'watch', 'smartphone', 'home_furnishing'];
-    const priorities = ['P1', 'P2', 'P3'];
-    const bins = ['R1', 'R6', 'B2', 'K4', 'C8'];
+    // Initial runsheet preset to test conflict
+    let existingRunsheets = [
+      { id: "RS-99201", agent: "Abdul Basith (WM1099)", count: 1, trackingIds: ["MPP4241771961"], vehicle: "Bike", time: "11 Sep 2026, 09:15 am", status: "DISPATCHED" }
+    ];
 
-    function getFormattedDate(offsetDays = 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + offsetDays);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
+    let scannedShipments = [];
+
+    const tidContainer = document.getElementById('tid-button-container');
+    Object.keys(extendedDatabase).forEach(key => {
+      const item = extendedDatabase[key];
+      const btn = document.createElement('button');
+      btn.className = "w-full text-left p-1.5 border border-gray-300 bg-white rounded hover:border-blue-500 hover:bg-blue-50 transition";
+      btn.onclick = () => feedBarcode(item.id);
+      btn.innerHTML = `
+        <div class="font-bold text-gray-800 text-[10px]">${item.id}</div>
+        <div class="text-[9px] text-gray-400 truncate">${item.address}</div>
+      `;
+      tidContainer.appendChild(btn);
+    });
+
+    const errBtn = document.createElement('button');
+    errBtn.className = "w-full text-left p-1.5 border border-dashed border-red-300 bg-red-50 rounded hover:border-red-500 transition";
+    errBtn.onclick = () => feedBarcode("NOTFOUND_882199");
+    errBtn.innerHTML = `
+      <div class="font-bold text-red-700 text-[10px]">NOTFOUND_882199</div>
+      <div class="text-[9px] text-red-500 font-sans font-semibold">Test "Not Found" Toast</div>
+    `;
+    tidContainer.appendChild(errBtn);
+
+    function copyAllTids() {
+      const allTids = Object.keys(extendedDatabase).join('\n');
+      navigator.clipboard.writeText(allTids);
+      showToast("All 12 TIDs copied to clipboard!", "success");
     }
 
-    function executeScan(barcodeValue) {
-      const tid = barcodeValue.trim();
-      if (!tid) return;
+    function pastePresetTids() {
+      document.getElementById('bulk-tracking-input').value = Object.keys(extendedDatabase).join('\n');
+      updateBulkCount();
+    }
 
-      // 1. Show dashboard processing spinner
-      spinner.style.display = 'block';
-      footerToast.style.visibility = 'hidden';
+    function fetchShipmentFromERP(trackingId) {
+      const upper = trackingId.toUpperCase();
+      if (upper.includes("NOTFOUND") || upper.includes("INVALID")) return null;
+      if (extendedDatabase[upper]) return extendedDatabase[upper];
+      return {
+        id: upper,
+        address: `Plot #${Math.floor(Math.random()*800 + 10)}, Main Road`,
+        pincode: "676505",
+        weight: "0.75 kg",
+        payment: "Prepaid"
+      };
+    }
 
-      // 2. Simulate 200-300ms network round-trip & DOM redraw
-      setTimeout(() => {
-        spinner.style.display = 'none';
+    const viewList = document.getElementById('view-runsheet-list');
+    const viewCreate = document.getElementById('view-runsheet-create');
+    const runsheetListBody = document.getElementById('runsheet-list-body');
+    const barcodeInput = document.getElementById('barcode-input');
+    const agentSearchInput = document.getElementById('agent-search-input');
+    const agentDropdownList = document.getElementById('agent-dropdown-list');
+    const posDisplay = document.getElementById('pos-display');
+    const vehicleSelect = document.getElementById('vehicle-select');
+    const emptyState = document.getElementById('empty-state');
+    const scannedTableContainer = document.getElementById('scanned-table-container');
+    const scannedRows = document.getElementById('scanned-rows');
+    const counterTop = document.getElementById('counter-top');
+    const countAll = document.getElementById('count-all');
+    const actionButtonsGroup = document.getElementById('action-buttons-group');
 
-        // Determine IS RTO state
-        const rtoRule = document.querySelector('input[name="rto_rule"]:checked').value;
-        let isRto = false;
-        if (rtoRule === 'always_yes') isRto = true;
-        else if (rtoRule === 'always_no') isRto = false;
-        else isRto = Math.random() < 0.5; // 50/50 Chance
+    // Autocomplete Agent Search Logic
+    function populateAgentDropdown(filterText = '') {
+      const q = filterText.toLowerCase().trim();
+      const filtered = wishmastersList.filter(wm => 
+        wm.name.toLowerCase().includes(q) || 
+        wm.id.toLowerCase().includes(q)
+      );
 
-        // Determine CPD Date
-        const useTodayCpd = document.getElementById('chk-today-cpd').checked;
-        const cpdDate = useTodayCpd 
-          ? getFormattedDate(0) 
-          : getFormattedDate(Math.floor(Math.random() * 5) - 2);
+      agentDropdownList.innerHTML = '';
 
-        const rfrDate = getFormattedDate(-1);
-        const substatus = substatusList[Math.floor(Math.random() * substatusList.length)];
-        const itemType = itemTypes[Math.floor(Math.random() * itemTypes.length)];
-        const priority = priorities[Math.floor(Math.random() * priorities.length)];
-        const bin = bins[Math.floor(Math.random() * bins.length)];
-        const isRtoCv = Math.random() < 0.2 ? 'Yes' : 'No';
-
-        // 3. Rebuild the card DOM dynamically to fire real MutationObserver triggers
-        cardContainer.innerHTML = `
-          <div class="shipment-meta-row">
-            <span class="tracking-id-text">${tid}</span>
-            <span class="substatus-tag">${substatus}</span>
-          </div>
-
-          <div class="shipment-grid">
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">CPD</span>
-              <span class="hl-red">${cpdDate}</span>
+      if (filtered.length === 0) {
+        agentDropdownList.innerHTML = `<div class="p-2.5 text-gray-400 italic text-center">No Wishmaster found</div>`;
+      } else {
+        filtered.forEach(wm => {
+          const item = document.createElement('div');
+          item.className = "px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition";
+          item.innerHTML = `
+            <div>
+              <span class="font-semibold text-gray-800">${wm.name}</span>
+              <span class="text-blue-600 font-mono text-[10px] ml-1 font-bold">(${wm.id})</span>
             </div>
+          `;
+          item.onmousedown = (e) => {
+            e.preventDefault();
+            selectWishmaster(wm);
+          };
+          agentDropdownList.appendChild(item);
+        });
+      }
+      agentDropdownList.classList.remove('hidden');
+    }
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">RFR</span>
-              <span>${rfrDate}</span>
-            </div>
+    function selectWishmaster(wm) {
+      selectedAgent = `${wm.name} (${wm.id})`;
+      agentSearchInput.value = selectedAgent;
+      agentDropdownList.classList.add('hidden');
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">IS RTO</span>
-              ${isRto ? '<span class="hl-yellow">Yes</span>' : '<span>No</span>'}
-            </div>
+      posDisplay.className = "border border-green-300 rounded px-3 py-1.5 text-xs text-green-700 bg-green-50 font-medium flex items-center justify-between";
+      posDisplay.innerHTML = `<span>POS Device: <b>${wm.posId}</b> (Active)</span> <i class="fa-solid fa-circle-check text-green-600"></i>`;
+      barcodeInput.focus();
+    }
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">IS PREXO</span>
-              <span>No</span>
-            </div>
+    agentSearchInput.addEventListener('input', (e) => {
+      selectedAgent = null;
+      populateAgentDropdown(e.target.value);
+    });
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">ITEM TYPE</span>
-              <span>${itemType}</span>
-            </div>
+    agentSearchInput.addEventListener('focus', () => {
+      populateAgentDropdown(agentSearchInput.value);
+    });
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">PRIORITY</span>
-              <span class="hl-blue">${priority}</span>
-            </div>
+    agentSearchInput.addEventListener('blur', () => {
+      setTimeout(() => agentDropdownList.classList.add('hidden'), 150);
+    });
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">IS RTO CV</span>
-              <span>${isRtoCv}</span>
-            </div>
+    function renderRunsheetList() {
+      runsheetListBody.innerHTML = '';
+      countAll.innerText = existingRunsheets.length;
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">BIN ID</span>
-              <span>${bin}</span>
-            </div>
+      existingRunsheets.forEach((r, idx) => {
+        const row = document.createElement('tr');
+        row.className = "hover:bg-gray-50 border-b border-gray-100";
+        let badgeStyle = (r.status === 'DISPATCHED') ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-700 border border-gray-300";
 
-            <div class="grid-cell fmcvyS">
-              <span class="cell-label">CLUSTER ID</span>
-              <span>-</span>
-            </div>
-          </div>
+        row.innerHTML = `
+          <td class="py-2.5 px-3 text-gray-400 font-mono">${idx + 1}</td>
+          <td class="py-2.5 px-3 font-semibold text-gray-800">${r.agent}</td>
+          <td class="py-2.5 px-3 font-mono text-blue-600 font-bold">${r.id}</td>
+          <td class="py-2.5 px-3 font-bold">${r.count}</td>
+          <td class="py-2.5 px-3 font-mono text-[10px] text-gray-600 truncate max-w-[140px]">${(r.trackingIds || []).join(', ')}</td>
+          <td class="py-2.5 px-3 text-gray-500">${r.vehicle}</td>
+          <td class="py-2.5 px-3 text-gray-500">${r.time}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeStyle}">${r.status}</span></td>
+          <td class="py-2.5 px-3 text-center"><button class="text-blue-600 hover:text-blue-800 font-semibold text-[11px]">View</button></td>
         `;
-
-        // 4. Update count metrics
-        countCompleted++;
-        countTomorrow++;
-        txtCompleted.textContent = countCompleted;
-        txtTomorrow.textContent = countTomorrow;
-
-        // 5. Flash bottom notification banner
-        footerToast.style.visibility = 'visible';
-
-        // 6. Clear input box for next barcode scan
-        scanInput.value = '';
-      }, 250);
+        runsheetListBody.appendChild(row);
+      });
     }
 
-    // Capture standard keyboard Enter event
-    scanInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        executeScan(scanInput.value);
+    function navigateTo(screen) {
+      if (screen === 'create') {
+        viewList.classList.add('hidden');
+        viewCreate.classList.remove('hidden');
+        resetCreateForm();
+        setTimeout(() => agentSearchInput.focus(), 100);
+      } else {
+        viewCreate.classList.add('hidden');
+        viewList.classList.remove('hidden');
+        renderRunsheetList();
       }
+    }
+
+    barcodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitScan();
     });
 
-    // Capture synthetic input events dispatched from automated scripts
-    scanInput.addEventListener('change', () => {
-      if (scanInput.value.trim()) {
-        executeScan(scanInput.value);
+    function focusBarcodeScan() {
+      barcodeInput.focus();
+    }
+
+    function feedBarcode(id) {
+      if (viewCreate.classList.contains('hidden')) navigateTo('create');
+      barcodeInput.value = id;
+      submitScan();
+    }
+
+    function submitScan() {
+      const code = barcodeInput.value.trim().toUpperCase();
+      if (!code) return;
+
+      // 1. Check if already scanned in current form
+      if (scannedShipments.some(s => s.id === code)) {
+        showToast(`Shipment [${code}] already added in this runsheet!`, 'warning');
+        barcodeInput.value = '';
+        return;
       }
-    });
+
+      // 2. CONFLICT CHECK: Checks if TID is already saved in ANY active runsheet (DRAFT OR DISPATCHED)
+      const existingConflict = existingRunsheets.find(rs => (rs.trackingIds || []).includes(code));
+
+      if (existingConflict) {
+        showToast(`Shipment [${code}] is already part of an active runsheet (${existingConflict.id} - ${existingConflict.status})!`, 'error');
+        barcodeInput.value = '';
+        return;
+      }
+
+      const match = fetchShipmentFromERP(code);
+      if (match) {
+        scannedShipments.push(match);
+        renderScannedTable();
+        showToast(`Shipment [${code}] added!`, 'success');
+      } else {
+        showToast(`Shipment [${code}] not found in inbound inventory!`, 'error');
+      }
+
+      barcodeInput.value = '';
+      barcodeInput.focus();
+    }
+
+    function renderScannedTable() {
+      counterTop.innerText = scannedShipments.length;
+
+      if (scannedShipments.length === 0) {
+        emptyState.classList.remove('hidden');
+        scannedTableContainer.classList.add('hidden');
+        actionButtonsGroup.classList.add('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      scannedTableContainer.classList.remove('hidden');
+      actionButtonsGroup.classList.remove('hidden');
+
+      scannedRows.innerHTML = '';
+      scannedShipments.forEach((item, i) => {
+        const row = document.createElement('tr');
+        row.className = "hover:bg-blue-50 border-b border-gray-100";
+        row.innerHTML = `
+          <td class="py-2.5 px-3 font-mono font-bold text-blue-700">${item.id}</td>
+          <td class="py-2.5 px-3 text-gray-800">${item.address}</td>
+          <td class="py-2.5 px-3 font-mono text-gray-600">${item.pincode}</td>
+          <td class="py-2.5 px-3 text-gray-600">${item.weight}</td>
+          <td class="py-2.5 px-3 font-semibold ${item.payment.includes('COD') ? 'text-amber-600' : 'text-emerald-600'}">${item.payment}</td>
+          <td class="py-2.5 px-3"><button onclick="removeScannedItem(${i})" class="text-gray-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button></td>
+        `;
+        scannedRows.appendChild(row);
+      });
+    }
+
+    function removeScannedItem(idx) {
+      scannedShipments.splice(idx, 1);
+      renderScannedTable();
+    }
+
+    function resetCreateForm() {
+      scannedShipments = [];
+      selectedAgent = null;
+      agentSearchInput.value = '';
+      posDisplay.className = "border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-500 bg-gray-50 font-medium";
+      posDisplay.innerHTML = 'No POS device found';
+      barcodeInput.value = '';
+      renderScannedTable();
+    }
+
+    function saveRunsheet(actionType) {
+      const agentToSave = selectedAgent || agentSearchInput.value.trim();
+      if (!agentToSave) {
+        showToast("Please select a Wishmaster first!", 'error');
+        agentSearchInput.focus();
+        return;
+      }
+
+      if (scannedShipments.length === 0) {
+        showToast("No shipments to save!", 'error');
+        return;
+      }
+
+      const newId = `RS-${Math.floor(10000 + Math.random() * 90000)}`;
+      const isDraft = (actionType === 'DRAFT');
+
+      existingRunsheets.unshift({
+        id: newId,
+        agent: agentToSave,
+        count: scannedShipments.length,
+        trackingIds: scannedShipments.map(s => s.id),
+        vehicle: vehicleSelect.value,
+        time: "Just now",
+        status: isDraft ? "DRAFT" : "DISPATCHED"
+      });
+
+      showToast(`Runsheet ${newId} ${isDraft ? 'saved as DRAFT' : 'dispatched'}!`, 'success');
+      setTimeout(() => navigateTo('list'), 800);
+    }
+
+    function openBulkModal() {
+      document.getElementById('bulk-modal').classList.remove('hidden');
+      document.getElementById('bulk-tracking-input').focus();
+    }
+
+    function closeBulkModal() {
+      document.getElementById('bulk-modal').classList.add('hidden');
+      document.getElementById('bulk-log-container').classList.add('hidden');
+    }
+
+    function updateBulkCount() {
+      const text = document.getElementById('bulk-tracking-input').value;
+      const ids = text.split(/[\n, ]+/).map(x => x.trim().toUpperCase()).filter(x => x.length > 0);
+      document.getElementById('bulk-id-counter').innerText = `${ids.length} IDs detected`;
+    }
+
+    // Runsheet Batch Automation with Draft/Dispatched Conflict Auto-Skip
+    async function executeBatchAutomation() {
+      const text = document.getElementById('bulk-tracking-input').value;
+      const ids = text.split(/[\n, ]+/).map(x => x.trim().toUpperCase()).filter(x => x.length > 0);
+
+      if (ids.length === 0) {
+        showToast("Please enter at least one tracking ID", "error");
+        return;
+      }
+
+      const agent = document.getElementById('bulk-agent').value;
+      const vehicle = document.getElementById('bulk-vehicle').value;
+      const status = document.getElementById('bulk-status').value;
+      const logContainer = document.getElementById('bulk-log-container');
+      const log = document.getElementById('bulk-log');
+      const runBtn = document.getElementById('btn-run-bulk');
+
+      logContainer.classList.remove('hidden');
+      log.innerHTML = '';
+      runBtn.disabled = true;
+
+      let createdCount = 0;
+      let skippedCount = 0;
+
+      for (let i = 0; i < ids.length; i++) {
+        const trkId = ids[i];
+
+        // Conflict check across ANY active runsheet (Draft or Dispatched)
+        const conflictRs = existingRunsheets.find(rs => (rs.trackingIds || []).includes(trkId));
+
+        if (conflictRs) {
+          log.innerHTML += `<div class="text-amber-400">⚠️ [${trkId}] Already in ${conflictRs.id} (${conflictRs.status}). SKIPPED.</div>`;
+          skippedCount++;
+          log.scrollTop = log.scrollHeight;
+          await new Promise(res => setTimeout(res, 90));
+          continue;
+        }
+
+        const shipment = fetchShipmentFromERP(trkId);
+
+        if (!shipment) {
+          log.innerHTML += `<div class="text-red-400">✖ [${trkId}] NOT FOUND / ERROR. SKIPPED.</div>`;
+          skippedCount++;
+          log.scrollTop = log.scrollHeight;
+          await new Promise(res => setTimeout(res, 90));
+          continue;
+        }
+
+        // Create single runsheet
+        const rsId = `RS-${Math.floor(10000 + Math.random() * 90000)}`;
+        existingRunsheets.unshift({
+          id: rsId,
+          agent: agent,
+          count: 1,
+          trackingIds: [trkId],
+          vehicle: vehicle,
+          time: "Just now",
+          status: status
+        });
+
+        log.innerHTML += `<div>✔ Created ${rsId} (${status}) -> ${trkId}</div>`;
+        createdCount++;
+
+        log.scrollTop = log.scrollHeight;
+        await new Promise(res => setTimeout(res, 100));
+      }
+
+      runBtn.disabled = false;
+      renderRunsheetList();
+      showToast(`Finished: ${createdCount} created, ${skippedCount} skipped!`, createdCount > 0 ? 'success' : 'warning');
+      setTimeout(() => closeBulkModal(), 1200);
+    }
+
+    let toastTimeout;
+    function showToast(text, type = 'error') {
+      const banner = document.getElementById('toast-banner');
+      const msg = document.getElementById('toast-msg');
+      const icon = document.getElementById('toast-icon');
+
+      clearTimeout(toastTimeout);
+      msg.innerText = text;
+
+      if (type === 'error') {
+        icon.className = "fa-solid fa-circle-xmark text-red-400 mr-2 text-xs";
+      } else if (type === 'warning') {
+        icon.className = "fa-solid fa-triangle-exclamation text-amber-400 mr-2 text-xs";
+      } else {
+        icon.className = "fa-solid fa-circle-check text-emerald-400 mr-2 text-xs";
+      }
+
+      banner.classList.remove('translate-y-20', 'opacity-0');
+      banner.classList.add('translate-y-0', 'opacity-100');
+
+      toastTimeout = setTimeout(() => {
+        banner.classList.add('translate-y-20', 'opacity-0');
+        banner.classList.remove('translate-y-0', 'opacity-100');
+      }, 3000);
+    }
+
+    renderRunsheetList();
   </script>
 </body>
 </html>
