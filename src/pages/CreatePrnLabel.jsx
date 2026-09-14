@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import JsBarcode from 'jsbarcode';
 import JSZip from 'jszip';
-import { QRCodeSVG } from 'qrcode.react';
 import {
   Save,
   Printer,
@@ -60,7 +59,7 @@ const EMPTY = {
   dimensions: '',
   notes: '',
   label_size: '100x150',
-  label_style: 'standard', // 'standard' | 'dual' | 'bold' | 'ekart_priority'
+  label_style: 'standard', // 'standard' | 'dual' | 'bold'
   barcode_type: 'CODE128',
   show_second_barcode: true,
 };
@@ -68,61 +67,6 @@ const EMPTY = {
 // Generates raw PRN ZPL string based on selected label style
 function generatePrnContent(form) {
   const style = form.label_style || 'standard';
-
-  // STYLE 4: EKART NDD PRIORITY (VERTICAL BARCODE + QR)
-  if (style === 'ekart_priority') {
-    const hubCode = form.courier_service || 'CCJ/KOT';
-    const tracking = form.tracking_id || '';
-    const orderRef = form.notes || form.tracking_id || 'S99090861540';
-    const routeCode = '13-09';
-    const batchCode = form.dimensions || 'LIAADSJ270015039';
-    const sanitizedRoute = routeCode.replace(/[^a-zA-Z0-9]/g, '');
-
-    return `CT~~CD,~CC^~CT~
-^XA
-~TA000~JSN^LT0^MNW^MTD^PON^PMN^LH0,0^JMA^PR5,5~SD30^JUS^LRN^CI27^PA0,1,1,0
-^XZ
-^XA
-^PW480
-^LL640
-^PON
-
-; --- TOP HEADER BAR ---
-^FO30,30^A0N,22,22^FDNDD E-Kart Logistics^FS
-^FO270,30^A0N,22,22^FDPREPAID^FS
-^FO360,25^GB100,28,28^FS
-^FO370,30^A0N,20,20^FR^FDPRIORITY^FS
-^FO25,60^GB430,2,2^FS
-
-; --- LEFT COLUMN: VERTICAL BARCODE & TRACKING ---
-^FO40,80^BY2,3,55^BCR,55,N,N,N^FD${tracking}^FS
-^FO105,85^A0R,20,20^FD${hubCode}^FS
-^FO105,210^A0R,20,20^FD${tracking}^FS
-
-; --- CENTER / RIGHT: 2D QR CODE ---
-^FO150,80^BQN,2,5^FDMA,${tracking};${orderRef};${form.receiver_postal_code || ''}^FS
-
-; --- RECIPIENT & ADDRESS DETAILS ---
-^FO140,290^A0N,20,20^FD${form.receiver_name || ''}^FS
-^FO140,318^A0N,17,17^FD${form.address_line1 || ''}^FS
-^FO140,342^A0N,16,16^FD${form.address_line2 || ''}^FS
-^FO140,366^A0N,16,16^FD${form.receiver_city || ''}^FS
-^FO140,390^A0N,18,18^FD${form.receiver_city || ''} - ${form.receiver_postal_code || ''}^FS
-^FO140,414^A0N,17,17^FD${form.receiver_country || 'India'}^FS
-
-; --- BOTTOM LEFT: ROUTE CODE & MINI BARCODE ---
-^FO35,465^A0N,22,22^FD${routeCode}^FS
-^FO35,492^A0N,15,15^FD${batchCode}^FS
-^FO35,515^BY1,2,35^BCN,35,N,N,N^FD${sanitizedRoute}^FS
-
-; --- BOTTOM RIGHT: SELLER & ORDER ID ---
-^FO190,490^A0N,18,18^FDNPQ^FS
-^FO270,480^A0N,16,16^FDOrdered Through Flipkart^FS
-^FO330,502^A0N,18,18^FD${orderRef}^FS
-
-^XZ
-`;
-  }
 
   // STYLE 2: DUAL STACKED
   if (style === 'dual') {
@@ -574,7 +518,6 @@ export function CreatePrnLabel() {
                 <option value="standard">Style 1: Standard Logistics (Side Barcode)</option>
                 <option value="dual">Style 2: Dual Stacked (Order + Tracking)</option>
                 <option value="bold">Style 3: High Density Express</option>
-                <option value="ekart_priority">Style 4: Ekart NDD Priority (Vertical Barcode + QR)</option>
               </select>
             </div>
 
@@ -753,24 +696,6 @@ export function CreatePrnLabel() {
               />
             </div>
             <div>
-              <label className="label-text">Hub / Routing Tag</label>
-              <input
-                className="input font-mono uppercase"
-                value={form.courier_service}
-                onChange={(e) => update('courier_service', e.target.value)}
-                placeholder="e.g. CCJ/KOT"
-              />
-            </div>
-            <div>
-              <label className="label-text">Batch / Manifest ID</label>
-              <input
-                className="input font-mono"
-                value={form.dimensions}
-                onChange={(e) => update('dimensions', e.target.value)}
-                placeholder="e.g. LIAADSJ270015039"
-              />
-            </div>
-            <div>
               <label className="label-text">Weight</label>
               <input
                 className="input"
@@ -893,8 +818,6 @@ export function PrnLabelPreview({ form }) {
   const primaryBarcodeSvgRef = useRef(null);
   const secondaryBarcodeSvgRef = useRef(null);
   const orderBarcodeSvgRef = useRef(null);
-  const verticalBarcodeSvgRef = useRef(null);
-  const miniBarcodeSvgRef = useRef(null);
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);
 
@@ -906,7 +829,7 @@ export function PrnLabelPreview({ form }) {
     const updateScale = () => {
       if (!wrapperRef.current) return;
       const containerWidth = wrapperRef.current.clientWidth;
-      const targetWidth = style === 'ekart_priority' ? 480 : 669;
+      const targetWidth = 669;
 
       if (containerWidth < targetWidth) {
         setScale(containerWidth / targetWidth);
@@ -920,11 +843,11 @@ export function PrnLabelPreview({ form }) {
     updateScale();
 
     return () => observer.disconnect();
-  }, [style]);
+  }, []);
 
   // Primary Barcode
   useEffect(() => {
-    if (primaryBarcodeSvgRef.current && form?.tracking_id && style !== 'ekart_priority') {
+    if (primaryBarcodeSvgRef.current && form?.tracking_id) {
       try {
         JsBarcode(primaryBarcodeSvgRef.current, sanitizeForCode39(form.tracking_id), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
@@ -941,44 +864,6 @@ export function PrnLabelPreview({ form }) {
       }
     }
   }, [form?.tracking_id, form?.barcode_type, style]);
-
-  // Ekart Priority Barcodes (Vertical + Mini)
-  useEffect(() => {
-    if (style === 'ekart_priority') {
-      if (verticalBarcodeSvgRef.current && form?.tracking_id) {
-        try {
-          JsBarcode(verticalBarcodeSvgRef.current, sanitizeForCode39(form.tracking_id), {
-            format: 'CODE128',
-            width: 1.5,
-            height: 48,
-            displayValue: false,
-            margin: 0,
-            background: 'transparent',
-            lineColor: '#000000',
-          });
-          verticalBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      if (miniBarcodeSvgRef.current) {
-        try {
-          JsBarcode(miniBarcodeSvgRef.current, '1309', {
-            format: 'CODE128',
-            width: 1.4,
-            height: 28,
-            displayValue: false,
-            margin: 0,
-            background: 'transparent',
-            lineColor: '#000000',
-          });
-          miniBarcodeSvgRef.current.setAttribute('style', 'shape-rendering: crispEdges; display: block;');
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-  }, [form?.tracking_id, style]);
 
   // Secondary Backup Barcode
   useEffect(() => {
@@ -1021,8 +906,8 @@ export function PrnLabelPreview({ form }) {
     }
   }, [form?.notes, style]);
 
-  const nativeWidth = style === 'ekart_priority' ? 480 : 669;
-  const nativeHeight = style === 'ekart_priority' ? 620 : 467;
+  const nativeWidth = 669;
+  const nativeHeight = 467;
 
   return (
     <div ref={wrapperRef} className="w-full flex justify-center items-start overflow-hidden">
@@ -1037,78 +922,12 @@ export function PrnLabelPreview({ form }) {
           position: 'relative',
           background: '#ffffff',
           color: '#000000',
-          fontFamily: 'Inter, Arial, sans-serif, monospace',
+          fontFamily: 'Inter, sans-serif, monospace',
           boxSizing: 'border-box',
           overflow: 'hidden',
           padding: '16px',
         }}
       >
-        {/* STYLE 4: EKART NDD PRIORITY */}
-        {style === 'ekart_priority' && (
-          <div style={{ width: '100%', height: '100%', border: '2px solid #000', padding: '12px 14px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #000', paddingBottom: '6px' }}>
-              <span style={{ fontSize: '13px', fontWeight: '800', textTransform: 'uppercase' }}>NDD E-Kart Logistics</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 'bold' }}>PREPAID</span>
-                <span style={{ background: '#000', color: '#fff', fontSize: '10px', fontWeight: '900', padding: '2px 5px', textTransform: 'uppercase' }}>PRIORITY</span>
-              </div>
-            </div>
-
-            {/* Middle Content */}
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '8px', padding: '8px 0', alignItems: 'start', flex: 1 }}>
-              {/* Vertical Barcode */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '280px', overflow: 'hidden' }}>
-                <div style={{ transform: 'rotate(-90deg)', transformOrigin: 'center center', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-                  <svg ref={verticalBarcodeSvgRef}></svg>
-                  <div style={{ display: 'flex', flexDirection: 'column', fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold', lineHeight: '1.2' }}>
-                    <span>{form?.courier_service || 'CCJ/KOT'}</span>
-                    <span>{form?.tracking_id || ''}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* QR Code & Recipient Address */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <QRCodeSVG
-                    value={`${form?.tracking_id || ''};${form?.notes || ''};${form?.receiver_postal_code || ''}`}
-                    size={140}
-                    level="M"
-                    includeMargin={false}
-                  />
-                </div>
-                <div style={{ fontSize: '12px', lineHeight: '1.3' }}>
-                  <div style={{ fontWeight: '800', fontSize: '13px' }}>{form?.receiver_name || ''}</div>
-                  <div>{form?.address_line1 || ''}</div>
-                  {form?.address_line2 && <div style={{ color: '#334155' }}>{form.address_line2}</div>}
-                  <div>{form?.receiver_city || ''}</div>
-                  <div style={{ fontWeight: '800', marginTop: '2px' }}>
-                    {form?.receiver_city ? `${form.receiver_city} - ` : ''}{form?.receiver_postal_code || ''}
-                  </div>
-                  <div style={{ color: '#334155' }}>{form?.receiver_country || 'Kerala'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div style={{ borderTop: '2px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '10px' }}>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: '900', fontFamily: 'monospace' }}>13-09</div>
-                <div style={{ fontSize: '9px', fontFamily: 'monospace', color: '#334155' }}>{form?.dimensions || 'LIAADSJ270015039'}</div>
-                <div style={{ marginTop: '2px' }}>
-                  <svg ref={miniBarcodeSvgRef}></svg>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                <span style={{ fontSize: '11px', fontWeight: '900' }}>NPQ</span>
-                <span style={{ color: '#475569', fontSize: '9px' }}>Ordered Through Flipkart</span>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}>{form?.notes || form?.tracking_id || 'S99090861540'}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {style === 'dual' && (
           <div style={{ width: '100%', height: '100%', border: '2px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '8px' }}>
@@ -1177,14 +996,14 @@ export function PrnLabelPreview({ form }) {
               <div style={{ position: 'absolute', right: '15px', top: '20px', bottom: '20px', width: '65px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
                 <div style={{ transform: 'rotate(90deg)', transformOrigin: 'center center', display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#ffffff', padding: '4px', whiteSpace: 'nowrap' }}>
                   <svg ref={secondaryBarcodeSvgRef}></svg>
-                  <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', margin: '2px 0 0 0' }}>
+                  <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', marginTop: '2px' }}>
                     {form?.notes || form?.tracking_id || 'BACKUP'}
                   </span>
                 </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '10px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justify: 'space-between', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '10px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ backgroundColor: '#000000', color: '#ffffff', padding: '5px', borderRadius: '6px' }}>
                   <PackageCheck className="h-5 w-5 stroke-[2.5]" />
@@ -1217,7 +1036,7 @@ export function PrnLabelPreview({ form }) {
               <span style={{ fontSize: '15px', fontWeight: '700' }}>ORDER ID: {form?.notes || '-'}</span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
+            <div style={{ display: 'flex', itemsCenter: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '2px' }}>
                   <Barcode className="h-3.5 w-3.5" />
@@ -1261,68 +1080,6 @@ function renderPrnLabelHtml(form) {
   const style = form?.label_style || 'standard';
   const addressLines = [form?.address_line1, form?.address_line2].filter(Boolean);
   
-  if (style === 'ekart_priority') {
-    const verticalBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, 'CODE128', 48, false, 1.5);
-    const miniBarcodeSvg = generateBarcodeSvgString('1309', 'CODE128', 25, false, 1.2);
-    const qrText = `${form?.tracking_id || ''};${form?.notes || ''};${form?.receiver_postal_code || ''}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrText)}`;
-
-    return `
-      <div style="width:480px; height:620px; background:#fff; color:#000; font-family:Arial, sans-serif; padding:14px; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
-        <div style="width:100%; height:100%; border:2px solid #000; padding:12px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between;">
-          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #000; padding-bottom:6px;">
-            <span style="font-size:13px; font-weight:800; text-transform:uppercase;">NDD E-Kart Logistics</span>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:12px; font-weight:bold;">PREPAID</span>
-              <span style="background:#000; color:#fff; font-size:10px; font-weight:900; padding:2px 5px; text-transform:uppercase;">PRIORITY</span>
-            </div>
-          </div>
-
-          <div style="display:grid; grid-template-columns:110px 1fr; gap:8px; padding:8px 0; align-items:start; flex:1;">
-            <div style="display:flex; align-items:center; justify-content:center; height:280px; overflow:hidden;">
-              <div style="transform:rotate(-90deg); transform-origin:center center; display:flex; align-items:center; gap:6px; white-space:nowrap;">
-                ${verticalBarcodeSvg}
-                <div style="display:flex; flex-direction:column; font-size:10px; font-family:monospace; font-weight:bold; line-height:1.2;">
-                  <span>${form?.courier_service || 'CCJ/KOT'}</span>
-                  <span>${form?.tracking_id || ''}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style="display:flex; flex-direction:column; gap:8px; padding-left:4px;">
-              <img src="${qrUrl}" width="135" height="135" alt="QR" style="display:block;" />
-              <div style="font-size:12px; line-height:1.3;">
-                <div style="font-weight:800; font-size:13px;">${form?.receiver_name || ''}</div>
-                <div>${form?.address_line1 || ''}</div>
-                ${form?.address_line2 ? `<div style="color:#334155;">${form.address_line2}</div>` : ''}
-                <div>${form?.receiver_city || ''}</div>
-                <div style="font-weight:800; margin-top:2px;">
-                  ${form?.receiver_city ? `${form.receiver_city} - ` : ''}${form?.receiver_postal_code || ''}
-                </div>
-                <div style="color:#334155;">${form?.receiver_country || 'Kerala'}</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="border-top:2px solid #000; padding-top:8px; display:flex; justify-content:space-between; align-items:flex-end; font-size:10px;">
-            <div>
-              <div style="font-size:13px; font-weight:900; font-family:monospace;">13-09</div>
-              <div style="font-size:9px; font-family:monospace; color:#334155;">${form?.dimensions || 'LIAADSJ270015039'}</div>
-              <div style="margin-top:2px;">
-                ${miniBarcodeSvg}
-              </div>
-            </div>
-            <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
-              <span style="font-size:11px; font-weight:900;">NPQ</span>
-              <span style="color:#475569; font-size:9px;">Ordered Through Flipkart</span>
-              <span style="font-size:11px; font-weight:bold; font-family:monospace;">${form?.notes || form?.tracking_id || 'S99090861540'}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
   // Barcode graphics
   const primaryBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, form?.barcode_type, style === 'bold' ? 80 : 65, false, style === 'bold' ? 2.5 : 2.2);
   const backupValue = form?.notes || form?.tracking_id;
