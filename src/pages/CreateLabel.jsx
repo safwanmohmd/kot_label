@@ -1,520 +1,662 @@
-import React, { useState, useRef } from 'react';
-import { useReactToPrint } from 'react-to-print';
-import { QRCodeSVG } from 'qrcode.react';
-import Barcode from 'react-barcode';
-import { 
-  Printer, 
-  Download, 
-  Copy, 
-  Check, 
-  RefreshCw, 
-  FileText, 
-  Layers, 
-  Settings2,
-  MapPin,
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Save,
+  Printer,
+  FileDown,
+  RotateCcw,
+  Truck,
   User,
+  MapPin,
   Package,
-  Truck
+  Hash,
+  Settings2,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
+import { LabelPreview } from '../components/LabelPreview.jsx';
+import { CUSTOM_LABEL_SIZE_KEY, useSettings } from '../lib/settings.js';
+import { useToast } from '../lib/useToast.jsx';
+import { createLabel, fetchLabel, markPrinted, updateLabel } from '../lib/labels.js';
+import {
+  COURIER_OPTIONS,
+  COUNTRY_OPTIONS,
+  LABEL_SIZES,
+  getLabelSize,
+} from '../types/label.js';
+import { exportLabelToPdf } from '../lib/pdf.js';
+import { buildPrintDocument, printHtml } from '../lib/print.js';
+import { sanitizeForCode39, supportsValue } from '../lib/barcode.js';
 
-export default function CreatePrnLabel() {
-  const [formData, setFormData] = useState({
-    // Header & Meta
-    logisticsType: 'NDD E-Kart Logistics',
-    paymentType: 'PREPAID',
-    priorityTag: 'PRIORITY',
-    hubCode: 'CCJ/KOT',
-    routeCode: '13-09',
-    batchCode: 'LIAADSJ270015039',
-    vendorCode: 'NPG',
-    
-    // Core Tracking
-    trackingNumber: 'FMPP4273763844',
-    orderId: 'S99090861540',
-    platform: 'Flipkart',
-    
-    // Recipient Info
-    customerName: 'Nasrin K',
-    addressLine1: 'Kuruniyan saw mill Othukkungal',
-    landmark: 'after the transformer',
-    cityArea: 'Nottanalakkal, Othukkungal, Near Jamia Ihyaussun',
-    districtPin: 'Malappuram - 676528',
-    state: 'Kerala',
-    
-    // Label Config
-    labelStyle: 'ekart-ndd-priority', // 'standard' | 'compact' | 'ekart-ndd-priority'
-    widthMm: 75,
-    heightMm: 100,
-    copies: 1
-  });
+const EMPTY = {
+  tracking_id: '',
+  receiver_name: '',
+  receiver_address: '',
+  receiver_phone: '',
+  receiver_city: '',
+  receiver_postal_code: '',
+  receiver_country: 'United States',
+  sender_name: '',
+  sender_address: '',
+  sender_phone: '',
+  courier_name: 'Ekart',
+  courier_service: '',
+  weight: '',
+  dimensions: '',
+  notes: '',
+  label_size: '100x150',
+  barcode_type: 'CODE128',
+};
 
-  const [copied, setCopied] = useState(false);
-  const printRef = useRef();
+export function CreateLabel() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [settings] = useSettings();
+  const [form, setForm] = useState({ ...EMPTY, ...settingsDefaults(settings) });
+  const [saving, setSaving] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [loading, setLoading] = useState(Boolean(id));
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [savedId, setSavedId] = useState(id ?? null);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handlePrint = useReactToPrint({
-    content: () => printRef.current,
-    documentTitle: `PRN_Label_${formData.trackingNumber || 'Print'}`,
-    pageStyle: `
-      @page {
-        size: ${formData.widthMm}mm ${formData.heightMm}mm;
-        margin: 0;
+  // Fetch label from history if ID is present
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const label = await fetchLabel(id);
+        if (cancelled || !label) return;
+        setForm({
+          tracking_id: label.tracking_id,
+          receiver_name: label.receiver_name,
+          receiver_address: label.receiver_address,
+          receiver_phone: label.receiver_phone ?? '',
+          receiver_city: label.receiver_city ?? '',
+          receiver_postal_code: label.receiver_postal_code ?? '',
+          receiver_country: label.receiver_country ?? 'United States',
+          sender_name: label.sender_name ?? '',
+          sender_address: label.sender_address ?? '',
+          sender_phone: label.sender_phone ?? '',
+          courier_name: label.courier_name ?? 'FedEx',
+          courier_service: label.courier_service ?? '',
+          weight: label.weight ?? '',
+          dimensions: label.dimensions ?? '',
+          notes: label.notes ?? '',
+          label_size: label.label_size,
+          barcode_type: label.barcode_type,
+        });
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'Failed to load label', 'error');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      @media print {
-        body {
-          margin: 0;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, toast]);
+
+  // Sync form defaults dynamically when settings change (only for un-saved/new entries)
+  useEffect(() => {
+    if (!id && !savedId && settings) {
+      setForm((prev) => ({
+        ...prev,
+        ...settingsDefaults(settings),
+      }));
+    }
+  }, [settings, id, savedId]);
+
+  const size = form.label_size === CUSTOM_LABEL_SIZE_KEY
+    ? {
+        key: CUSTOM_LABEL_SIZE_KEY,
+        name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm',
+        description: 'Custom',
+        widthMm: settings?.customLabelSize?.widthMm ?? 100,
+        heightMm: settings?.customLabelSize?.heightMm ?? 150,
+        layout: 'full',
       }
-    `
-  });
+    : getLabelSize(form.label_size);
 
-  // Generate Zebra / TSPL PRN command format string
-  const generatePrnCode = () => {
-    const { 
-      trackingNumber, customerName, addressLine1, 
-      districtPin, hubCode, orderId, paymentType, 
-      priorityTag, logisticsType, routeCode, batchCode, vendorCode 
-    } = formData;
+  const labelSizes = [
+    ...LABEL_SIZES,
+    { key: CUSTOM_LABEL_SIZE_KEY, name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm', description: 'Custom' },
+  ];
 
-    return `^XA
-^PW600
-^LL800
-^PON
+  const barcodeSettings = useMemo(
+    () => ({ ...settings?.barcode, type: form.barcode_type }),
+    [settings?.barcode, form.barcode_type],
+  );
 
-; --- TOP BAR ---
-^FO30,30^A0N,22,22^FD${logisticsType}^FS
-^FO330,30^A0N,22,22^FD${paymentType}^FS
-^FO430,24^GB140,32,32^FS
-^FO440,30^A0N,22,22^FR^FD${priorityTag}^FS
-^FO30,65^GB540,2,2^FS
+  const trackingInvalid = form.tracking_id.length > 0 && !supportsValue(form.barcode_type, form.tracking_id);
+  const canSave = form.tracking_id.trim() && form.receiver_name.trim() && form.receiver_address.trim() && !trackingInvalid;
 
-; --- LEFT VERTICAL BARCODE & TEXT ---
-^FO40,90^BY2,3,90^B3R,N,70,N,N^FD${trackingNumber}^FS
-^FO120,95^A0R,24,24^FD${hubCode}^FS
-^FO120,230^A0R,22,22^FD${trackingNumber}^FS
+  function update(key, value) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
 
-; --- MINI ROUTING CODE & BATCH ---
-^FO30,520^A0N,20,20^FD${routeCode}^FS
-^FO30,545^A0N,16,16^FD${batchCode}^FS
-^FO30,570^BY1,2,40^BCN,40,N,N,N^FD${trackingNumber}^FS
+  async function handleSave() {
+    if (!canSave) {
+      toast('Please fill in Tracking ID, receiver name, and address.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        tracking_id: form.tracking_id.trim(),
+        receiver_name: form.receiver_name.trim(),
+        receiver_address: form.receiver_address.trim(),
+        receiver_phone: form.receiver_phone.trim() || null,
+        receiver_city: form.receiver_city.trim() || null,
+        receiver_postal_code: form.receiver_postal_code.trim() || null,
+        receiver_country: form.receiver_country || null,
+        sender_name: form.sender_name.trim() || null,
+        sender_address: form.sender_address.trim() || null,
+        sender_phone: form.sender_phone.trim() || null,
+        courier_name: form.courier_name || null,
+        courier_service: form.courier_service.trim() || null,
+        weight: form.weight.trim() || null,
+        dimensions: form.dimensions.trim() || null,
+        notes: form.notes.trim() || null,
+        label_size: form.label_size,
+        barcode_type: form.barcode_type,
+      };
+      if (savedId) {
+        await updateLabel(savedId, payload);
+        toast('Label updated.', 'success');
+      } else {
+        const created = await createLabel(payload);
+        setSavedId(created.id);
+        toast('Label saved to history.', 'success');
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to save label', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
 
-; --- QR CODE ---
-^FO170,90^BQN,2,6^FDQA,${trackingNumber};${orderId};${districtPin}^FS
+  async function handlePrint() {
+    if (!form.tracking_id.trim()) {
+      toast('Enter a tracking ID first.', 'error');
+      return;
+    }
+    setPrinting(true);
+    try {
+      const previewHtml = renderLabelHtml(form, size, settings.barcode, settings.organizationName, settings.customerPosition, settings.labelHeader);
+      const doc = buildPrintDocument(previewHtml, { w: size.widthMm, h: size.heightMm });
+      printHtml(doc);
+      if (savedId) {
+        markPrinted(savedId).catch(() => {});
+      }
+      toast('Sent to printer.', 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Print failed', 'error');
+    } finally {
+      setPrinting(false);
+    }
+  }
 
-; --- CUSTOMER & ADDRESS DETAILS ---
-^FO170,360^A0N,22,22^FD${customerName}^FS
-^FO170,390^A0N,18,18^FD${addressLine1}^FS
-^FO170,415^A0N,18,18^FD${formData.landmark}^FS
-^FO170,440^A0N,18,18^FD${formData.cityArea}^FS
-^FO170,465^A0N,20,20^B^FD${districtPin}^FS
-^FO170,490^A0N,18,18^FD${formData.state}^FS
+  async function handlePdf() {
+    if (!form.tracking_id.trim()) {
+      toast('Enter a tracking ID first.', 'error');
+      return;
+    }
+    setExporting(true);
+    try {
+      const label = {
+        id: savedId ?? 'draft',
+        ...form,
+        receiver_phone: form.receiver_phone || null,
+        receiver_city: form.receiver_city || null,
+        receiver_postal_code: form.receiver_postal_code || null,
+        receiver_country: form.receiver_country || null,
+        sender_name: form.sender_name || null,
+        sender_address: form.sender_address || null,
+        sender_phone: form.sender_phone || null,
+        courier_name: form.courier_name || null,
+        courier_service: form.courier_service || null,
+        weight: form.weight || null,
+        dimensions: form.dimensions || null,
+        notes: form.notes || null,
+        status: 'created',
+        print_count: 0,
+        last_printed_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      await exportLabelToPdf(label, barcodeSettings, settings);
+      toast('PDF downloaded.', 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'PDF export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
 
-; --- FOOTER ---
-^FO220,535^A0N,18,18^FD${vendorCode}^FS
-^FO340,525^A0N,18,18^FDOrdered Through ${formData.platform}^FS
-^FO400,545^A0N,20,20^FD${orderId}^FS
+  function handleReset() {
+    setForm({ ...EMPTY, ...settingsDefaults(settings) });
+    setSavedId(null);
+    navigate('/create');
+  }
 
-^XZ`;
-  };
-
-  const handleCopyPrn = () => {
-    navigator.clipboard.writeText(generatePrnCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleDownloadPrn = () => {
-    const element = document.createElement("a");
-    const file = new Blob([generatePrnCode()], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `${formData.trackingNumber || 'label'}.prn`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
+  if (loading) {
+    return <div className="flex items-center justify-center py-20 text-sm text-ink-400">Loading label…</div>;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
-              <Printer className="w-7 h-7 text-indigo-400" />
-              PRN Label Generator & Thermal Styler
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Generate industrial ZPL/PRN code and high-precision SVG thermal labels
-            </p>
+    <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 animate-fade-in">
+      <div className="xl:col-span-3 space-y-5">
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Hash className="h-4 w-4 text-brand-600" />
+            <h3 className="text-sm font-bold text-ink-900">Tracking & Barcode</h3>
           </div>
-          
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-md hover:shadow-indigo-500/20 transition-all text-sm"
-            >
-              <Printer className="w-4 h-4" /> Print Label
-            </button>
-            <button
-              onClick={handleDownloadPrn}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg font-medium transition-all text-sm"
-            >
-              <Download className="w-4 h-4" /> Export .PRN
-            </button>
-            <button
-              onClick={handleCopyPrn}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg font-medium transition-all text-sm"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Copied' : 'Copy PRN'}
-            </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="label-text">Tracking ID *</label>
+              <input
+                className={`input font-mono ${trackingInvalid ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+                value={form.tracking_id}
+                onChange={(e) => update('tracking_id', e.target.value)}
+                placeholder="e.g. 1Z999AA10123456784"
+                autoFocus
+              />
+              {trackingInvalid && (
+                <p className="text-xs text-red-600 mt-1">
+                  {form.barcode_type === 'CODE39'
+                    ? 'Code39 supports only A-Z, 0-9, and - . $ / + % SPACE.'
+                    : 'This value is not valid for the selected barcode type.'}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="label-text">Barcode Type</label>
+              <select
+                className="input"
+                value={form.barcode_type}
+                onChange={(e) => update('barcode_type', e.target.value)}
+              >
+                <option value="CODE128">Code128 (recommended)</option>
+                <option value="CODE39">Code39</option>
+                <option value="QR">QR Code</option>
+              </select>
+            </div>
+            <div>
+              <label className="label-text">Label Size</label>
+              <select
+                className="input"
+                value={form.label_size}
+                onChange={(e) => update('label_size', e.target.value)}
+              >
+                {labelSizes.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.name} - {s.description}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* Workspace Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Controls / Inputs Form */}
-          <div className="lg:col-span-6 space-y-6">
-            <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-5 shadow-lg space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
-                <span className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-400" /> Style & Template Layout
-                </span>
-                <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30 font-mono">
-                  ZPL/Thermal
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Select Label Preset</label>
-                <select
-                  name="labelStyle"
-                  value={formData.labelStyle}
-                  onChange={handleInputChange}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="ekart-ndd-priority">Ekart NDD Priority (Compact Vertical Barcode)</option>
-                  <option value="standard">Standard E-Commerce Shipping (Horizontal)</option>
-                  <option value="compact">Compact Warehouse Mini Label</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Header / Logistics Brand</label>
-                  <input
-                    type="text"
-                    name="logisticsType"
-                    value={formData.logisticsType}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Priority / Tag</label>
-                  <input
-                    type="text"
-                    name="priorityTag"
-                    value={formData.priorityTag}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <User className="h-4 w-4 text-brand-600" />
+            <h3 className="text-sm font-bold text-ink-900">Receiver</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="label-text">Receiver Name *</label>
+              <input
+                className="input"
+                value={form.receiver_name}
+                onChange={(e) => update('receiver_name', e.target.value)}
+                placeholder="Full name or company"
+              />
             </div>
-
-            {/* Tracking & Logistics Info */}
-            <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-5 shadow-lg space-y-4">
-              <span className="font-semibold text-sm text-slate-200 flex items-center gap-2 border-b border-slate-700/60 pb-3">
-                <Truck className="w-4 h-4 text-emerald-400" /> Tracking & Routing Identifiers
-              </span>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Tracking / AWB Number</label>
-                  <input
-                    type="text"
-                    name="trackingNumber"
-                    value={formData.trackingNumber}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Hub / Route Tag</label>
-                  <input
-                    type="text"
-                    name="hubCode"
-                    value={formData.hubCode}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Order ID</label>
-                  <input
-                    type="text"
-                    name="orderId"
-                    value={formData.orderId}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Payment Mode</label>
-                  <select
-                    name="paymentType"
-                    value={formData.paymentType}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-indigo-500"
-                  >
-                    <option value="PREPAID">PREPAID</option>
-                    <option value="COD">CASH ON DELIVERY (COD)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Run Date/Route Code</label>
-                  <input
-                    type="text"
-                    name="routeCode"
-                    value={formData.routeCode}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Batch / Bag Manifest</label>
-                  <input
-                    type="text"
-                    name="batchCode"
-                    value={formData.batchCode}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                  />
-                </div>
-              </div>
+            <div className="sm:col-span-2">
+              <label className="label-text">Address *</label>
+              <textarea
+                className="input min-h-[72px] resize-y"
+                value={form.receiver_address}
+                onChange={(e) => update('receiver_address', e.target.value)}
+                placeholder="Street address, apartment, suite"
+              />
             </div>
-
-            {/* Destination Address */}
-            <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-5 shadow-lg space-y-4">
-              <span className="font-semibold text-sm text-slate-200 flex items-center gap-2 border-b border-slate-700/60 pb-3">
-                <MapPin className="w-4 h-4 text-amber-400" /> Customer & Destination
-              </span>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Customer Name</label>
-                  <input
-                    type="text"
-                    name="customerName"
-                    value={formData.customerName}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Address Line</label>
-                  <input
-                    type="text"
-                    name="addressLine1"
-                    value={formData.addressLine1}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Landmark</label>
-                    <input
-                      type="text"
-                      name="landmark"
-                      value={formData.landmark}
-                      onChange={handleInputChange}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Locality / Area</label>
-                    <input
-                      type="text"
-                      name="cityArea"
-                      value={formData.cityArea}
-                      onChange={handleInputChange}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">City / PIN Code</label>
-                    <input
-                      type="text"
-                      name="districtPin"
-                      value={formData.districtPin}
-                      onChange={handleInputChange}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">State</label>
-                    <input
-                      type="text"
-                      name="state"
-                      value={formData.state}
-                      onChange={handleInputChange}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white"
-                    />
-                  </div>
-                </div>
-              </div>
+            <div>
+              <label className="label-text">City</label>
+              <input
+                className="input"
+                value={form.receiver_city}
+                onChange={(e) => update('receiver_city', e.target.value)}
+                placeholder="City"
+              />
+            </div>
+            <div>
+              <label className="label-text">Postal Code</label>
+              <input
+                className="input"
+                value={form.receiver_postal_code}
+                onChange={(e) => update('receiver_postal_code', e.target.value)}
+                placeholder="ZIP / postal"
+              />
+            </div>
+            <div>
+              <label className="label-text">Country</label>
+              <select
+                className="input"
+                value={form.receiver_country}
+                onChange={(e) => update('receiver_country', e.target.value)}
+              >
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label-text">Phone</label>
+              <input
+                className="input"
+                value={form.receiver_phone}
+                onChange={(e) => update('receiver_phone', e.target.value)}
+                placeholder="+1 555 0100"
+              />
             </div>
           </div>
+        </div>
 
-          {/* Label Preview Container */}
-          <div className="lg:col-span-6 flex flex-col items-center">
-            <div className="sticky top-6 w-full flex flex-col items-center">
-              <div className="w-full flex items-center justify-between mb-3 px-2 text-xs text-slate-400">
-                <span>Direct Print Preview (Thermal 1:1)</span>
-                <span>Preset: {formData.labelStyle}</span>
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Truck className="h-4 w-4 text-brand-600" />
+            <h3 className="text-sm font-bold text-ink-900">Courier & Package</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label-text">Courier</label>
+              <select
+                className="input"
+                value={form.courier_name}
+                onChange={(e) => update('courier_name', e.target.value)}
+              >
+                {COURIER_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label-text">Service</label>
+              <input
+                className="input"
+                value={form.courier_service}
+                onChange={(e) => update('courier_service', e.target.value)}
+                placeholder="Express, Ground, Overnight…"
+              />
+            </div>
+            <div>
+              <label className="label-text">Weight</label>
+              <input
+                className="input"
+                value={form.weight}
+                onChange={(e) => update('weight', e.target.value)}
+                placeholder="2.5 kg"
+              />
+            </div>
+            <div>
+              <label className="label-text">Dimensions</label>
+              <input
+                className="input"
+                value={form.dimensions}
+                onChange={(e) => update('dimensions', e.target.value)}
+                placeholder="30 × 20 × 15 cm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-5">
+          <button
+            onClick={() => setShowAdvanced((s) => !s)}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-brand-600" />
+              <h3 className="text-sm font-bold text-ink-900">Sender & Notes</h3>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 text-ink-400 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {showAdvanced && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 animate-fade-in">
+              <div>
+                <label className="label-text">Sender Name</label>
+                <input
+                  className="input"
+                  value={form.sender_name}
+                  onChange={(e) => update('sender_name', e.target.value)}
+                  placeholder="Sender name or company"
+                />
               </div>
-
-              {/* Printable Component Container */}
-              <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-2xl flex justify-center w-full overflow-auto">
-                <div 
-                  ref={printRef}
-                  className="bg-white text-black font-sans selection:bg-none"
-                  style={{
-                    width: '340px',
-                    minHeight: '430px',
-                    padding: '12px 14px',
-                    boxSizing: 'border-box',
-                    border: '1px solid #d1d5db',
-                    fontSize: '11px',
-                    lineHeight: '1.25'
-                  }}
-                >
-                  {/* --- NEW STYLE: EKART NDD PRIORITY --- */}
-                  {formData.labelStyle === 'ekart-ndd-priority' ? (
-                    <div className="flex flex-col h-full justify-between select-none">
-                      {/* Top bar */}
-                      <div className="flex items-center justify-between border-b border-black pb-1.5 text-[11px] font-bold tracking-tight">
-                        <span className="font-extrabold uppercase">{formData.logisticsType}</span>
-                        <div className="flex items-center gap-1.5">
-                          <span>{formData.paymentType}</span>
-                          <span className="bg-black text-white px-1.5 py-0.5 text-[9px] font-black uppercase rounded-none">
-                            {formData.priorityTag}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Main Center Area */}
-                      <div className="grid grid-cols-12 gap-1.5 py-2.5 items-start">
-                        {/* Left Vertical Section (Barcode & Vertical Text) */}
-                        <div className="col-span-4 flex flex-col items-center justify-start pr-1">
-                          <div className="flex items-center justify-center -rotate-90 origin-center my-14 translate-y-2">
-                            <div className="flex items-center gap-1.5">
-                              <Barcode
-                                value={formData.trackingNumber || 'EMPTY'}
-                                width={1.2}
-                                height={38}
-                                displayValue={false}
-                                margin={0}
-                              />
-                              <div className="flex flex-col text-[9px] font-mono font-bold leading-tight">
-                                <span>{formData.hubCode}</span>
-                                <span>{formData.trackingNumber}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Section: Large QR Code + Full Address */}
-                        <div className="col-span-8 flex flex-col pl-1 space-y-2">
-                          <div className="flex justify-start">
-                            <QRCodeSVG
-                              value={`${formData.trackingNumber}|${formData.orderId}|${formData.districtPin}`}
-                              size={128}
-                              level="M"
-                              includeMargin={false}
-                            />
-                          </div>
-
-                          <div className="text-[10px] space-y-0.5 leading-snug">
-                            <p className="font-bold text-[11px] text-neutral-900">{formData.customerName}</p>
-                            <p className="text-neutral-800">{formData.addressLine1}</p>
-                            {formData.landmark && <p className="text-neutral-600 italic text-[9px]">{formData.landmark}</p>}
-                            <p className="text-neutral-800">{formData.cityArea}</p>
-                            <p className="font-bold text-[11px] text-neutral-950 mt-1">{formData.districtPin}</p>
-                            <p className="text-neutral-800">{formData.state}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bottom Footer Section */}
-                      <div className="border-t border-black/80 pt-2 flex items-end justify-between text-[9px]">
-                        <div className="flex flex-col space-y-0.5">
-                          <span className="font-bold text-[10px] font-mono">{formData.routeCode}</span>
-                          <span className="text-[8px] font-mono tracking-tighter text-neutral-700">{formData.batchCode}</span>
-                          <div className="pt-0.5">
-                            <Barcode
-                              value={formData.routeCode?.replace(/[^a-zA-Z0-9]/g, '') || '1309'}
-                              width={1.0}
-                              height={20}
-                              displayValue={false}
-                              margin={0}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="text-right flex flex-col items-end">
-                          <span className="font-bold text-[10px] uppercase">{formData.vendorCode}</span>
-                          <span className="text-neutral-600 text-[8px]">Ordered Through {formData.platform}</span>
-                          <span className="font-mono font-bold text-[9px] text-neutral-900">{formData.orderId}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Fallback / Standard E-Commerce View */
-                    <div className="space-y-4 text-xs">
-                      <div className="flex justify-between border-b pb-2 font-bold">
-                        <span>{formData.logisticsType}</span>
-                        <span>{formData.paymentType}</span>
-                      </div>
-                      <div className="flex justify-center">
-                        <Barcode value={formData.trackingNumber || 'SAMPLE'} width={1.5} height={50} />
-                      </div>
-                      <div className="border-t pt-2 space-y-1 text-left">
-                        <p className="font-bold">{formData.customerName}</p>
-                        <p>{formData.addressLine1}</p>
-                        <p>{formData.districtPin}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div>
+                <label className="label-text">Sender Phone</label>
+                <input
+                  className="input"
+                  value={form.sender_phone}
+                  onChange={(e) => update('sender_phone', e.target.value)}
+                  placeholder="+1 555 0199"
+                />
               </div>
-
-              {/* Raw ZPL / PRN Inspection Modal-like Viewer */}
-              <div className="w-full mt-4 bg-slate-900 border border-slate-800 rounded-xl p-3">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-mono">
-                  <span>PRN Command Output (ZPL II Compatible)</span>
-                  <button onClick={handleCopyPrn} className="text-indigo-400 hover:text-indigo-300">
-                    {copied ? 'Copied!' : 'Copy Code'}
-                  </button>
-                </div>
-                <pre className="bg-black/60 p-3 rounded text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-40 selection:bg-emerald-900">
-                  {generatePrnCode()}
-                </pre>
+              <div className="sm:col-span-2">
+                <label className="label-text">Sender Address</label>
+                <textarea
+                  className="input min-h-[60px] resize-y"
+                  value={form.sender_address}
+                  onChange={(e) => update('sender_address', e.target.value)}
+                  placeholder="Return address"
+                />
               </div>
+              <div className="sm:col-span-2">
+                <label className="label-text">Internal Notes</label>
+                <textarea
+                  className="input min-h-[60px] resize-y"
+                  value={form.notes}
+                  onChange={(e) => update('notes', e.target.value)}
+                  placeholder="Notes for warehouse staff (not printed on label)"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card p-4 flex flex-wrap items-center gap-2 sticky bottom-4">
+          <button onClick={handleSave} disabled={saving || !canSave} className="btn-primary">
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving…' : savedId ? 'Update Label' : 'Save Label'}
+          </button>
+          <button onClick={handlePrint} disabled={printing || !form.tracking_id} className="btn-secondary">
+            <Printer className="h-4 w-4" />
+            {printing ? 'Preparing…' : 'Print'}
+          </button>
+          <button onClick={handlePdf} disabled={exporting || !form.tracking_id} className="btn-secondary">
+            <FileDown className="h-4 w-4" />
+            {exporting ? 'Exporting…' : 'Download PDF'}
+          </button>
+          <button onClick={handleReset} className="btn-ghost ml-auto">
+            <RotateCcw className="h-4 w-4" />
+            Reset
+          </button>
+          {savedId && (
+            <span className="badge bg-green-100 text-green-700">
+              <Check className="h-3 w-3" /> Saved
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="xl:col-span-2">
+        <div className="xl:sticky xl:top-4">
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-ink-900">Live Preview</h3>
+              <span className="text-xs text-ink-500">{size.name}</span>
+            </div>
+            <div className="flex justify-center items-start bg-ink-100 rounded-lg p-4 overflow-auto">
+              <div
+                style={{ transform: 'scale(1)', transformOrigin: 'top center' }}
+                className="max-w-full"
+              >
+                <LabelPreview
+                  label={form}
+                  size={size}
+                  settings={barcodeSettings}
+                  organizationName={settings?.organizationName}
+                  customerPosition={settings?.customerPosition}
+                  labelHeader={settings?.labelHeader}
+                />
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <MiniStat icon={MapPin} label="Size" value={`${size.widthMm}×${size.heightMm}mm`} />
+              <MiniStat icon={Hash} label="Type" value={form.barcode_type} />
+              <MiniStat icon={Package} label="Layout" value={size.layout} />
             </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function MiniStat({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-lg bg-ink-50 p-2.5">
+      <Icon className="h-3.5 w-3.5 text-ink-400 mx-auto mb-1" />
+      <p className="text-[10px] text-ink-500 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-semibold text-ink-800 truncate">{value}</p>
+    </div>
+  );
+}
+
+function settingsDefaults(settings) {
+  if (!settings) return {};
+  return {
+    label_size: settings.defaultLabelSize || '100x150',
+    courier_name: settings.defaultCourier || 'Ekart',
+    barcode_type: settings.barcode?.type || 'CODE128',
+    receiver_country: 'United States',
+  };
+}
+
+function renderLabelHtml(form, size, barcode, orgName, customerPosition, labelHeader) {
+  const isCompact = size.layout === 'compact';
+  const barcodeType = form.barcode_type;
+
+  // FAILSAFE STRUCTURAL HEADER TOGGLE (Matches preview layout 1:1)
+  const isHeaderEnabled = 
+    labelHeader !== null && 
+    labelHeader !== undefined && 
+    labelHeader.enabled !== false && 
+    labelHeader.disabled !== true &&
+    labelHeader.show !== false;
+
+  const headerHeight = isHeaderEnabled ? (labelHeader?.heightMm ?? 22) : 0;
+  const adjustedCustomerY = isHeaderEnabled ? (customerPosition?.yMm ?? 62) : Math.max(5, (customerPosition?.yMm ?? 62) - 22);
+
+  if (isCompact) {
+    return `
+    <div class="print-page" style="width:${size.widthMm}mm;height:${size.heightMm}mm;padding:1mm;box-sizing:border-box;display:flex;flex-direction:column;font-family:Inter,sans-serif;">
+      <div style="display:flex;justify-content:space-between;font-size:6px;font-weight:bold;color:#334155;">
+        <span>${escapeHtml(form.courier_name || 'COURIER')}</span>
+        <span style="font-family:monospace;">${escapeHtml(form.tracking_id)}</span>
+      </div>
+      <div id="barcode" style="flex:1;min-height:0;"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script>
+      try {
+        JsBarcode("#barcode svg-element", "${escapeHtml(form.tracking_id)}", {
+          format: "${barcodeType === 'CODE39' ? 'CODE39' : 'CODE128'}",
+          width: 1, height: 14, displayValue: false, margin: 0
+        });
+      } catch(e) { console.error(e); }
+    </script>
+    `;
+  }
+
+  return `
+  <div class="print-page" style="width:${size.widthMm}mm;height:${size.heightMm}mm;position:relative;font-family:Inter,sans-serif;overflow:hidden;background:white;">
+    ${isHeaderEnabled ? `
+    <div style="background:${labelHeader?.color ?? '#2563eb'};color:white;height:${headerHeight}mm;padding:0 5mm;display:flex;align-items:center;position:absolute;top:0;left:0;right:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+        <div>
+          <div style="font-size:10px;font-weight:bold;letter-spacing:0.05em;">SHIPPING LABEL</div>
+          <div style="font-size:9px;color:#dbeafe;">${escapeHtml(orgName || 'ElasticRunKottakkal_KOT')}</div>
+        </div>
+        ${form.courier_name ? `<div style="font-size:11px;font-weight:bold;background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:4px;">${escapeHtml(form.courier_name)}</div>` : ''}
+      </div>
+    </div>
+    ` : ''}
+    
+    <div style="position:absolute;left:5mm;right:5mm;top:${headerHeight + 5}mm;bottom:5mm;display:flex;flex-direction:column;justify-content:space-between;">
+      <div style="position:relative;width:100%;">
+        <div>
+          <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;">TRACKING ID</div>
+          <div style="font-size:14px;font-family:monospace;font-weight:bold;color:#0f172a;word-break:break-all;">${escapeHtml(form.tracking_id || '-')}</div>
+        </div>
+        <div id="barcode" style="position:absolute;left:0;top:15mm;width:100%;height:20mm;background:white;border:1px solid #e2e8f0;border-radius:4px;display:flex;align-items:center;justify-content:center;"></div>
+      </div>
+
+      <div style="position:absolute;left:${Math.max(0, (customerPosition?.xMm ?? 5) - 5)}mm;top:${Math.max(0, adjustedCustomerY - (headerHeight + 5))}mm;width:${customerPosition?.widthMm ?? 90}mm;">
+        <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;margin-bottom:2px;">SHIP TO</div>
+        <div style="font-size:${customerPosition?.fontSize ?? 13}px;font-weight:bold;color:#0f172a;">${escapeHtml(form.receiver_name || 'Receiver name')}</div>
+        <div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml(form.receiver_address || 'Address')}</div>
+        ${[form.receiver_city, form.receiver_postal_code].filter(Boolean).join(' ') ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml([form.receiver_city, form.receiver_postal_code].filter(Boolean).join(' '))}</div>` : ''}
+        ${form.receiver_country ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#334155;">${escapeHtml(form.receiver_country)}</div>` : ''}
+        ${form.receiver_phone ? `<div style="font-size:${Math.max(8, (customerPosition?.fontSize ?? 13) - 2)}px;color:#475569;">Tel: ${escapeHtml(form.receiver_phone)}</div>` : ''}
+      </div>
+
+      <div style="margin-top:auto;width:100%;display:flex;flex-direction:column;gap:1.5mm;">
+        ${(form.sender_name || form.sender_address) ? `
+        <div style="border-top:1px dashed #cbd5e1;padding-top:2mm;">
+          <div style="font-size:8px;font-weight:bold;color:#64748b;letter-spacing:0.1em;margin-bottom:2px;">FROM</div>
+          ${form.sender_name ? `<div style="font-size:11px;font-weight:bold;color:#1e293b;">${escapeHtml(form.sender_name)}</div>` : ''}
+          ${form.sender_address ? `<div style="font-size:11px;color:#475569;">${escapeHtml(form.sender_address)}</div>` : ''}
+        </div>` : ''}
+        ${(form.courier_service || form.weight) ? `
+        <div style="border-top:1px solid #e2e8f0;padding-top:2mm;display:flex;gap:6mm;font-size:10px;">
+          ${form.courier_service ? `<div><span style="font-weight:bold;color:#64748b;">SERVICE: </span><span style="color:#1e293b;">${escapeHtml(form.courier_service)}</span></div>` : ''}
+          ${form.weight ? `<div><span style="font-weight:bold;color:#64748b;">WEIGHT: </span><span style="color:#1e293b;">${escapeHtml(form.weight)}</span></div>` : ''}
+        </div>` : ''}
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script>
+    (function() {
+      var el = document.getElementById('barcode');
+      if (!el) return;
+      var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      el.appendChild(svg);
+      try {
+        JsBarcode(svg, "${escapeHtml(sanitizeForCode39(form.tracking_id))}", {
+          format: "${barcodeType === 'CODE39' ? 'CODE39' : 'CODE128'}",
+          width: ${barcode?.width || 2}, height: 50, displayValue: true, fontSize: 12, margin: 2,
+          background: "#ffffff", lineColor: "#0f172a"
+        });
+      } catch(e) { console.error(e); }
+    })();
+  </script>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
