@@ -19,8 +19,9 @@ import {
   PackageCheck,
   ListFilter,
   FolderSymlink,
-  Search,       // Added for TID Search & Audit
-  Luggage       // Added for Bag Dispatch Hub
+  Search,
+  Luggage,
+  Terminal // Added for Chromebook Console Script Generator
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -30,6 +31,7 @@ const NAV_GROUPS = [
     groupLabel: 'Core Terminal',
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/chromebook', label: 'Chromebook Runner', icon: Terminal }, // Added /chromebook route
       { to: '/create', label: 'Create Label', icon: PlusCircle },
       { to: '/create-prn', label: 'PRN Label Generator', icon: FileCode },
       { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
@@ -39,8 +41,8 @@ const NAV_GROUPS = [
   {
     groupLabel: 'Tracking & Inspection',
     items: [
-      { to: '/bags', label: 'Bag Dispatch Hub', icon: Luggage },          // Added /bags route
-      { to: '/search', label: 'Shipment Auditor', icon: Search },         // Added /search route
+      { to: '/bags', label: 'Bag Dispatch Hub', icon: Luggage },
+      { to: '/search', label: 'Shipment Auditor', icon: Search },
       { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet },
       { to: '/verifytid', label: 'Return Verification', icon: PackageCheck },
       { to: '/sort', label: 'Tracking Sorter', icon: ListFilter },

@@ -46,7 +46,7 @@ function App() {
             <Route path="/gdrive" element={<DriveLinksManager />} />
             <Route path="/bags" element={<BagSessionManager />} />
             <Route path="/search" element={<BulkTrackingSearch />} />
-            <Route path="/script" element={<KotAutomationConsoleGenerator />} />
+            <Route path="/chromebook" element={<KotAutomationConsoleGenerator />} />
           </Routes>
         </AppShell>
       </BrowserRouter>
