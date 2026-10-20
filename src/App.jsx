@@ -19,6 +19,8 @@ import { TrackingSorter } from './pages/TrackingSorter.jsx';
 import { DriveLinksManager } from './pages/DriveLinksManager.jsx';
 import BagSessionManager from './pages/BagSessionManager.jsx';
 import BulkTrackingSearch from './pages/BulkTrackingSearch.jsx';
+import KotAutomationConsoleGenerator from './pages/KotAutomationConsoleGenerator.jsx';
+
 
 function App() {
   return (
@@ -44,6 +46,7 @@ function App() {
             <Route path="/gdrive" element={<DriveLinksManager />} />
             <Route path="/bags" element={<BagSessionManager />} />
             <Route path="/search" element={<BulkTrackingSearch />} />
+            <Route path="/script" element={<KotAutomationConsoleGenerator />} />
           </Routes>
         </AppShell>
       </BrowserRouter>

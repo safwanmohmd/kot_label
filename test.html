@@ -1,474 +1,564 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Ekart Logistics Portal - Hub Ops</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ekart PRN & ZIP Generator</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; background-color: #f1f3f7; margin: 0; padding: 0; }
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cfd6df; border-radius: 4px; }
-    .pcm-btn { font-size: 11px; font-weight: bold; border-radius: 4px; padding: 6px 14px; cursor: pointer; transition: all 0.2s; border: none; }
-    .pcm-btn.primary { background-color: #1967d2; color: #fff; }
-    .pcm-btn.primary:hover { background-color: #1452a8; }
-    .pcm-btn.success { background-color: #2e7d32; color: #fff; }
-    .pcm-btn.success:hover { background-color: #1b5e20; }
-    .pcm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .pcm-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .pcm-table th, .pcm-table td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; text-align: left; }
-    .pcm-table thead { background: #f8f9fa; color: #616161; font-size: 10px; text-transform: uppercase; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-    /* React-select live imitation styles */
-    .css-2b097c-container { position: relative; box-sizing: border-box; }
-    .css-yk16xz-control {
-      display: flex; align-items: center; justify-content: space-between;
-      background-color: #fff; border: 1px solid #cbd5e1; border-radius: 4px;
-      min-height: 32px; padding: 0 4px; cursor: pointer; user-select: none;
+    body {
+      background-color: #0d1117;
+      color: #f0f6fc;
+      font-family: Arial, Helvetica, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px 16px;
     }
-    .css-yk16xz-control:hover { border-color: #94a3b8; }
-    .css-1hwfws3 { display: flex; flex: 1; align-items: center; overflow: hidden; padding: 2px 4px; }
-    .css-1uccc91-singleValue { color: #1e293b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-    .css-1wy0on6 { display: flex; align-items: center; }
-    .css-tlfecz-indicatorContainer { display: flex; padding: 4px; cursor: pointer; color: #94a3b8; }
-    .css-1okebmr-indicatorSeparator { width: 1px; background-color: #e2e8f0; margin: 4px 0; height: 16px; }
-    .react-select__menu {
-      position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px;
-      background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px;
-      box-shadow: 0 4px 11px rgba(0, 0, 0, 0.1); z-index: 60;
+
+    .container {
+      display: grid;
+      grid-template-columns: 320px auto;
+      gap: 28px;
+      align-items: start;
+      max-width: 860px;
+      width: 100%;
     }
-    .react-select__option {
-      padding: 6px 10px; font-size: 12px; cursor: pointer; color: #334155;
+
+    @media (max-width: 768px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
     }
-    .react-select__option:hover { background-color: #f1f5f9; color: #1e40af; }
-    .react-select__option.selected { background-color: #2563eb; color: #ffffff; font-weight: bold; }
+
+    .form-panel {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .form-panel h2 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #58a6ff;
+      margin-bottom: 12px;
+    }
+
+    .field {
+      margin-bottom: 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #8b949e;
+      margin-bottom: 2px;
+    }
+
+    input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #ffffff;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #58a6ff;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .btn-zip {
+      background-color: #f59e0b;
+      color: #ffffff;
+    }
+
+    .btn-prn {
+      background-color: #1f6feb;
+      color: #ffffff;
+    }
+
+    .preview-stage {
+      background: #21262d;
+      padding: 24px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .label-canvas {
+      width: 310px;
+      height: 460px;
+      background: #ffffff;
+      color: #000000;
+      border-radius: 4px;
+      padding: 12px 14px 10px 14px;
+      position: relative;
+      font-family: Arial, Helvetica, sans-serif;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      user-select: none;
+    }
+
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 16px;
+      margin-bottom: 8px;
+    }
+
+    .brand-text {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: -0.1px;
+    }
+
+    .status-tags {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .status-prepaid {
+      font-size: 8.5px;
+      font-weight: 700;
+    }
+
+    .status-priority {
+      background: #000000;
+      color: #ffffff;
+      padding: 1.5px 3px;
+      font-weight: 900;
+      font-size: 8px;
+    }
+
+    .left-barcode-container {
+      position: absolute;
+      top: 34px;
+      left: 10px;
+      width: 50px;
+      height: 270px;
+    }
+
+    .rotator {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: rotate(-90deg) translate(-270px, 0);
+      transform-origin: top left;
+      display: flex;
+      align-items: center;
+      height: 50px;
+      width: 270px;
+    }
+
+    .rot-labels-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 270px;
+      padding-left: 6px;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      font-size: 8px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .lower-left-section {
+      position: absolute;
+      top: 315px;
+      left: 10px;
+      width: 70px;
+    }
+
+    .batch-1 {
+      font-size: 10px;
+      font-weight: 800;
+      font-family: Arial, sans-serif;
+      line-height: 1.1;
+    }
+
+    .batch-2 {
+      font-size: 6.5px;
+      font-weight: 700;
+      font-family: Arial, sans-serif;
+      line-height: 1.1;
+      margin-top: 1px;
+      margin-bottom: 3px;
+    }
+
+    .right-section {
+      position: absolute;
+      top: 34px;
+      left: 78px;
+      width: 220px;
+    }
+
+    .qr-holder {
+      width: 195px;
+      height: 195px;
+    }
+
+    .qr-holder img {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .address-holder {
+      margin-top: 8px;
+      font-size: 8.5px;
+      line-height: 1.25;
+      color: #000000;
+    }
+
+    .addr-name {
+      font-size: 9px;
+      font-weight: 800;
+      margin-bottom: 1px;
+    }
+
+    .bottom-row {
+      position: absolute;
+      top: 375px;
+      left: 78px;
+      width: 220px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .vendor-npq {
+      font-size: 9px;
+      font-weight: 800;
+      margin-left: 20px;
+    }
+
+    .flipkart-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      text-align: right;
+    }
+
+    .fk-text {
+      font-size: 7.5px;
+      font-weight: 600;
+    }
+
+    .fk-order {
+      font-size: 8.5px;
+      font-weight: 800;
+      font-family: Arial, sans-serif;
+    }
   </style>
 </head>
-<body class="h-screen flex flex-col select-none overflow-hidden text-xs text-gray-700">
+<body>
 
-  <!-- Ekart Header -->
-  <div class="HeaderComponent-header-3ufLUgcwbeFkfgMe9HLhC6 shadow h-11 bg-[#1967d2] text-white flex items-center justify-between px-4 shrink-0" data-cy="header">
-    <div class="flex items-center space-x-6">
-      <span class="font-extrabold text-base italic tracking-wider text-white">e<span class="text-yellow-400">kart</span></span>
-      <span class="text-xs font-semibold border-b-2 border-white pb-0.5 cursor-pointer">Operations</span>
-    </div>
-    <div class="flex items-center space-x-3 text-xs">
-      <span class="font-mono bg-blue-800 px-2 py-0.5 rounded text-[11px]">lma.100000579921 (ElasticRunKottakalODH_KOT)</span>
-      <i class="material-icons text-base cursor-pointer">account_circle</i>
-    </div>
-  </div>
+  <div class="container">
+    <div class="form-panel">
+      <h2>Ekart Label Config</h2>
 
-  <div class="flex flex-1 overflow-hidden">
-    <!-- Sidebar -->
-    <div id="sidebar" class="w-48 bg-white border-r border-gray-200 flex flex-col justify-between shrink-0">
-      <div class="py-2">
-        <div class="px-3 py-2 text-[11px] font-bold text-gray-400 uppercase">ElasticRunKottakalODH_KOT</div>
-        <nav class="space-y-0.5 font-medium text-[11px]">
-          <a href="javascript:void(0)" onclick="navigateTo('list')" class="flex items-center space-x-2 px-3 py-2 bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-600">
-            <i class="material-icons text-sm">assignment</i>
-            <span>Runsheets</span>
-          </a>
-          <a href="javascript:void(0)" class="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:bg-gray-100 border-l-4 border-transparent">
-            <i class="material-icons text-sm">people</i>
-            <span>Agents summary</span>
-          </a>
-          <a href="javascript:void(0)" class="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:bg-gray-100 border-l-4 border-transparent">
-            <i class="material-icons text-sm">payment</i>
-            <span>Payments</span>
-          </a>
-          <a href="javascript:void(0)" class="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:bg-gray-100 border-l-4 border-transparent">
-            <i class="material-icons text-sm">local_shipping</i>
-            <span>Inbound</span>
-          </a>
-        </nav>
+      <div class="field">
+        <label>Tracking ID (TID) *</label>
+        <input type="text" id="inTid" value="FMPP4251661422" oninput="render()" />
       </div>
-      <div class="p-3 text-[10px] text-gray-400 border-t border-gray-200">Hub Ops v4.8</div>
+
+      <div class="field">
+        <label>Hub Code</label>
+        <input type="text" id="inHub" value="CCJ/KOT" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>Order Reference ID</label>
+        <input type="text" id="inOrder" value="S99090861540" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>Customer Name</label>
+        <input type="text" id="inName" value="Nasrin K" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>Address Line 1</label>
+        <input type="text" id="inAddr1" value="Kuruniyan saw mill Othukkungal" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>Landmark</label>
+        <input type="text" id="inLandmark" value="after the transformer" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>Locality</label>
+        <input type="text" id="inLocality" value="Nottanalakkal, Othukkungal, Near Jamia Ihyaussun" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>District & PIN</label>
+        <input type="text" id="inPin" value="Malappuram - 676528" oninput="render()" />
+      </div>
+
+      <div class="field">
+        <label>State</label>
+        <input type="text" id="inState" value="Kerala" oninput="render()" />
+      </div>
+
+      <div class="btn-group">
+        <button class="btn-zip" onclick="downloadZipArchive()">
+          📦 Download shipments_[TID].zip
+        </button>
+        <button class="btn-prn" onclick="downloadSinglePrn()">
+          📄 Download shipmentId_[TID].prn
+        </button>
+      </div>
     </div>
 
-    <!-- Main Workspace -->
-    <div class="flex-1 flex flex-col overflow-hidden bg-[#fafbfc]">
-      
-      <!-- VIEW 1: RUNSHEETS LIST -->
-      <section id="view-runsheet-list" class="flex-1 flex flex-col overflow-hidden">
-        <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
-          <div>
-            <h1 class="text-base font-bold text-gray-800">Runsheets</h1>
-            <p class="text-[11px] text-gray-500">Active &amp; Dispatched Runsheets</p>
-          </div>
-          <div>
-            <button class="pcm-btn primary ListRunsheetsComponent-create-3jyNXRLtDXWtdl4wJS4GKp flex items-center gap-1" data-cy="createRunsheetButton" data-track-name="create_runsheet_click" onclick="navigateTo('create')">
-              <i class="material-icons text-xs">add_circle</i>
-              <span>Runsheet</span>
-            </button>
+    <!-- Live Preview Stage -->
+    <div class="preview-stage">
+      <div class="label-canvas">
+        <div class="top-header">
+          <span class="brand-text">NDD E-Kart Logistics</span>
+          <div class="status-tags">
+            <span class="status-prepaid">PREPAID</span>
+            <span class="status-priority">PRIORITY</span>
           </div>
         </div>
 
-        <div class="flex-1 overflow-auto p-4 custom-scrollbar">
-          <div class="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-            <table class="pcm-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Wishmaster</th>
-                  <th>Runsheet ID</th>
-                  <th>Shipments</th>
-                  <th>Tracking IDs</th>
-                  <th>Vehicle</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="runsheet-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- VIEW 2: CREATE RUNSHEET -->
-      <section id="view-runsheet-create" class="hidden flex-1 flex flex-col overflow-hidden bg-white">
-        <div class="container-header space-between border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 bg-white">
-          <div class="header flex items-center space-x-2" data-cy="createRunsheetheader">
-            <button onclick="navigateTo('list')" class="text-gray-500 hover:text-gray-800 mr-2"><i class="material-icons text-sm">arrow_back</i></button>
-            <span class="font-bold text-base text-gray-800">Create Runsheet</span>
-          </div>
-          <div class="CreateRunsheetComponent-right-header-2dMOXiP9jX_C5ziyptMnqQ text-right">
-            <div class="CreateRunsheetComponent-number-2cT6V-OESonRBaKPrKqbqN text-base font-extrabold text-gray-800" id="shipment-counter">0</div>
-            <div class="CreateRunsheetComponent-text-3R-f0GtK7ZK0QYKnMH6hCM text-[10px] text-gray-400 font-semibold uppercase">Number of Shipments</div>
-          </div>
-        </div>
-
-        <!-- 3 Assignment Elements -->
-        <div class="assign-section border-b border-gray-200 px-6 py-3 bg-white grid grid-cols-3 gap-6 shrink-0">
-          
-          <!-- Agent Selector -->
-          <div class="fixed-assign-element" data-cy="assignAgent">
-            <div class="flex items-center space-x-1 mb-1">
-              <i class="material-icons select-icon font-size-16 text-gray-500 text-sm">account_circle</i>
-              <span class="select-label font-semibold text-gray-600">Assign Agent</span>
-              <span class="text-red-500">*</span>
-            </div>
-            <div data-testid="selectComponent-agentId" data-watchid="selectComponent-agentId" data-cy="selectComponent-agentId" class="relative" style="width: 100%;">
-              <div class="css-2b097c-container">
-                <div class="css-yk16xz-control" onclick="toggleAgentDropdown(event)">
-                  <div class="css-1hwfws3">
-                    <div id="agent-display-value" class="css-1uccc91-singleValue">Muhammed Thasreef (3382163) | LAST_MILE</div>
-                    <div class="css-1g6gooi">
-                      <input autocapitalize="none" autocomplete="off" autocorrect="off" id="react-select-44-input" spellcheck="false" tabindex="0" type="text" aria-autocomplete="list" value="" class="opacity-0 w-1 outline-none">
-                    </div>
-                  </div>
-                  <div class="css-1wy0on6">
-                    <span class="css-1okebmr-indicatorSeparator"></span>
-                    <div aria-hidden="true" class="css-tlfecz-indicatorContainer">
-                      <svg height="16" width="16" viewBox="0 0 20 20" class="fill-current text-gray-400"><path d="M4.516 7.548c0.436-0.446 1.043-0.481 1.576 0l3.908 3.747 3.908-3.747c0.533-0.481 1.141-0.446 1.574 0 0.436 0.445 0.408 1.197 0 1.615-0.406 0.418-4.695 4.502-4.695 4.502-0.217 0.223-0.502 0.335-0.787 0.335s-0.57-0.112-0.789-0.335c0 0-4.287-4.084-4.695-4.502s-0.436-1.17 0-1.615z"></path></svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div id="agent-options" class="react-select__menu hidden">
-                <div class="react-select__option" onclick="selectWishmaster('Muhammed Thasreef (3382163) | LAST_MILE')">Muhammed Thasreef (3382163) | LAST_MILE</div>
-                <div class="react-select__option" onclick="selectWishmaster('Abdul Basith (WM1099) | LAST_MILE')">Abdul Basith (WM1099) | LAST_MILE</div>
-                <div class="react-select__option" onclick="selectWishmaster('Mohammed Rishad (WM1102) | LAST_MILE')">Mohammed Rishad (WM1102) | LAST_MILE</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- POS Display -->
-          <div class="fixed-assign-element">
-            <div class="flex items-center space-x-1 mb-1">
-              <i class="material-icons select-icon font-size-16 text-gray-500 text-sm">nfc</i>
-              <span class="select-label font-semibold text-gray-600">Assign POS</span>
-            </div>
-            <div class="CreateRunsheetComponent-readonlyField-3IvWPil7IzK4qXOayI_-nE border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-500 bg-gray-50 font-medium h-[32px] flex items-center">
-              No POS devices found
-            </div>
-          </div>
-
-          <!-- Vehicle Type: INTERACTIVE DROPDOWN (Bike, Van, etc.) -->
-          <div class="flex flex-1">
-            <div class="fixed-assign-element noBorderRight w-full" data-cy="assignVehicleType">
-              <div class="flex items-center space-x-1 mb-1">
-                <i class="material-icons select-icon font-size-16 text-gray-500 text-sm">directions_car</i>
-                <span class="select-label font-semibold text-gray-600">Assign Vehicle Type</span>
-              </div>
-              <div data-testid="selectComponent-vehicleType" data-watchid="selectComponent-vehicleType" data-cy="selectComponent-vehicleType" style="width: 100%; position: relative;">
-                <div class="css-2b097c-container">
-                  <div class="css-yk16xz-control" onclick="toggleVehicleDropdown(event)">
-                    <div class="css-1hwfws3">
-                      <div id="vehicle-display-value" class="css-1uccc91-singleValue">Bike</div>
-                      <div class="css-1g6gooi">
-                        <input autocapitalize="none" autocomplete="off" autocorrect="off" id="react-select-45-input" spellcheck="false" tabindex="0" type="text" aria-autocomplete="list" value="" class="opacity-0 w-1 outline-none">
-                      </div>
-                    </div>
-                    <div class="css-1wy0on6">
-                      <span class="css-1okebmr-indicatorSeparator"></span>
-                      <div aria-hidden="true" class="css-tlfecz-indicatorContainer">
-                        <svg height="16" width="16" viewBox="0 0 20 20" aria-hidden="true" focusable="false" class="fill-current text-gray-400"><path d="M4.516 7.548c0.436-0.446 1.043-0.481 1.576 0l3.908 3.747 3.908-3.747c0.533-0.481 1.141-0.446 1.574 0 0.436 0.445 0.408 1.197 0 1.615-0.406 0.418-4.695 4.502-4.695 4.502-0.217 0.223-0.502 0.335-0.787 0.335s-0.57-0.112-0.789-0.335c0 0-4.287-4.084-4.695-4.502s-0.436-1.17 0-1.615z"></path></svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Vehicle Options Menu -->
-                <div id="vehicle-options-menu" class="react-select__menu hidden">
-                  <div class="react-select__option selected" onclick="selectVehicle('Bike')">Bike</div>
-                  <div class="react-select__option" onclick="selectVehicle('Van')">Van</div>
-                  <div class="react-select__option" onclick="selectVehicle('Auto')">Auto</div>
-                  <div class="react-select__option" onclick="selectVehicle('Electric Scooter (EV)')">Electric Scooter (EV)</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Center Scan View / Table Container -->
-        <div class="shipments-list flex-1 overflow-auto p-4 flex flex-col" id="shipmentList">
-          <!-- Initial Empty Scan Card -->
-          <div id="scan-empty-box" class="m-auto flex flex-col items-center justify-center text-center p-8">
-            <div class="header font-bold text-gray-800 text-sm mb-1">Scan shipment to add it in runsheet</div>
-            <div class="CreateRunsheetComponent-help-text-3A_c3D9eO60pBEaN076mkW text-gray-500 text-xs mb-3">Add shipments in the runsheet through scanning or manually by entering in the input below</div>
-            <button class="pcm-btn primary marginBottom10 mb-3" data-cy="buttonStartScanning" onclick="unlockScanInput()">Start scanning</button>
-            <div class="sub-header text-gray-400 text-xs mb-1">or add manually</div>
-            <div>
-              <input disabled="" class="input border border-gray-300 rounded px-3 py-1.5 text-xs uppercase font-mono" placeholder="Enter shipment ID" id="enteredShipmentId" data-testid="enterShipment">
-            </div>
-          </div>
-
-          <!-- Active Shipments Table -->
-          <div id="scan-table-box" class="hidden">
-            <div style="margin-bottom: 20px;">
-              <table class="pcm-table shipments-table" data-cy="shipmentsTable">
-                <thead>
-                  <tr>
-                    <td></td>
-                    <td>Tracking ID</td>
-                    <td style="min-width: 100px;">CPD</td>
-                    <td class="CreateRunsheetComponent-priority-3TCnSa2FcuYTl1ELzvINpz">Priority</td>
-                    <td>Amount</td>
-                    <td colspan="3" style="width: 400px;">Address</td>
-                    <td>Pincode</td>
-                    <td>Action</td>
-                  </tr>
-                </thead>
-                <tbody id="shipments-table-body"></tbody>
-              </table>
+        <div class="left-barcode-container">
+          <div class="rotator">
+            <svg id="svgMainBarcode"></svg>
+            <div class="rot-labels-col">
+              <span id="dispHub">CCJ/KOT</span>
+              <span id="dispTid">FMPP4251661422</span>
             </div>
           </div>
         </div>
 
-        <!-- Bottom Action Section -->
-        <div class="action-section space-between border-t border-gray-200 px-6 py-2.5 bg-[#fcfcfd] flex items-center justify-between shrink-0">
-          <div class="sc-AykKC sc-fzXfNi sc-fzXfNj sc-fzXfNl sc-fzXfOv fgtRDa CreateRunsheetComponent-footerScanBox-3kAHGknj-CQIYMxX7Pmaun flex items-center gap-2">
-            <button onclick="navigateTo('list')" class="text-xs text-gray-500 hover:text-gray-700">Discard</button>
+        <div class="lower-left-section">
+          <div class="batch-1">13-09</div>
+          <div class="batch-2">LIAADSJ270015039</div>
+          <svg id="svgMiniBarcode"></svg>
+        </div>
+
+        <div class="right-section">
+          <div class="qr-holder">
+            <img id="qrImg" src="" alt="QR" />
           </div>
-          <div class="sc-AykKC sc-fzXfNi sc-fzXfNj sc-fzXfNl iKfPQX flex items-center space-x-2">
-            <button disabled="" class="pcm-btn CreateRunsheetComponent-height32-1kb_q8n8AyCKz3lDfVf6rA" data-cy="save" data-testid="saveRunsheet" data-track-name="save_runsheet_click" data-track-context="Save runsheet as draft" onclick="executeSave('DRAFT')">
-              <span>Save</span>
-            </button>
-            <button disabled="" class="pcm-btn CreateRunsheetComponent-height32-1kb_q8n8AyCKz3lDfVf6rA" data-cy="saveAndConfirm" data-testid="confirmRunsheet" data-track-name="save_and_confirm_runsheet_click" data-track-context="Save and confirm runsheet" onclick="executeSave('CONFIRM')">
-              Save &amp; Confirm
-            </button>
+
+          <div class="address-holder">
+            <div class="addr-name" id="dispName">Nasrin K</div>
+            <div id="dispAddr1">Kuruniyan saw mill Othukkungal</div>
+            <div id="dispLandmark">after the transformer</div>
+            <div id="dispLocality">Nottanalakkal, Othukkungal, Near Jamia Ihyaussun</div>
+            <div id="dispPin">Malappuram - 676528</div>
+            <div id="dispState">Kerala</div>
           </div>
         </div>
-      </section>
 
-    </div>
-  </div>
-
-  <!-- Real ERP Toast Structure -->
-  <div id="portal-toast" class="hidden fixed bottom-6 left-6 z-50">
-    <div data-cy="non-acionable-toast" class="bg-gray-900 text-white border border-gray-700 px-4 py-2.5 rounded shadow-xl flex items-center space-x-2 text-xs">
-      <i class="material-icons text-amber-400 text-sm">warning</i>
-      <span id="toast-text">Alert message</span>
+        <div class="bottom-row">
+          <span class="vendor-npq">NPQ</span>
+          <div class="flipkart-col">
+            <span class="fk-text">Ordered Through Flipkart</span>
+            <span class="fk-order" id="dispOrder">S99090861540</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
-    let runsheets = [
-      { id: "RS-99201", agent: "Muhammed Thasreef (3382163) | LAST_MILE", count: 1, trackingIds: ["FMPR0960592786"], vehicle: "Bike", status: "DISPATCHED" }
-    ];
+    function render() {
+      const tid = document.getElementById('inTid').value.trim() || 'FMPP4251661422';
+      const hub = document.getElementById('inHub').value.trim() || 'CCJ/KOT';
+      const order = document.getElementById('inOrder').value.trim() || 'S99090861540';
+      const name = document.getElementById('inName').value;
+      const addr1 = document.getElementById('inAddr1').value;
+      const landmark = document.getElementById('inLandmark').value;
+      const locality = document.getElementById('inLocality').value;
+      const pin = document.getElementById('inPin').value;
+      const state = document.getElementById('inState').value;
 
-    let currentDraftShipments = [];
+      document.getElementById('dispHub').textContent = hub;
+      document.getElementById('dispTid').textContent = tid;
+      document.getElementById('dispName').textContent = name;
+      document.getElementById('dispAddr1').textContent = addr1;
+      document.getElementById('dispLandmark').textContent = landmark;
+      document.getElementById('dispLocality').textContent = locality;
+      document.getElementById('dispPin').textContent = pin;
+      document.getElementById('dispState').textContent = state;
+      document.getElementById('dispOrder').textContent = order;
 
-    const viewList = document.getElementById('view-runsheet-list');
-    const viewCreate = document.getElementById('view-runsheet-create');
-    const runsheetTbody = document.getElementById('runsheet-tbody');
-    const agentDisplayValue = document.getElementById('agent-display-value');
-    const agentOptions = document.getElementById('agent-options');
-    const vehicleDisplayValue = document.getElementById('vehicle-display-value');
-    const vehicleOptionsMenu = document.getElementById('vehicle-options-menu');
-    const scanInput = document.getElementById('enteredShipmentId');
-    const saveBtn = document.querySelector('button[data-cy="save"]');
-    const confirmBtn = document.querySelector('button[data-cy="saveAndConfirm"]');
-    const scanEmptyBox = document.getElementById('scan-empty-box');
-    const scanTableBox = document.getElementById('scan-table-box');
-    const shipmentsTableBody = document.getElementById('shipments-table-body');
-    const shipmentCounter = document.getElementById('shipment-counter');
+      try {
+        JsBarcode("#svgMainBarcode", tid, {
+          format: "CODE128",
+          width: 1.5,
+          height: 44,
+          displayValue: false,
+          margin: 0,
+          background: "transparent",
+          lineColor: "#000000"
+        });
+      } catch (e) {}
 
-    function renderList() {
-      runsheetTbody.innerHTML = '';
-      runsheets.forEach((rs, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td class="font-bold text-gray-800">${rs.agent}</td>
-          <td class="font-mono text-blue-600 font-bold">${rs.id}</td>
-          <td>${rs.count}</td>
-          <td class="font-mono text-[10px] text-gray-500">${rs.trackingIds.join(', ')}</td>
-          <td>${rs.vehicle}</td>
-          <td><span class="px-2 py-0.5 rounded text-[10px] font-bold ${rs.status === 'DISPATCHED' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}">${rs.status}</span></td>
-        `;
-        runsheetTbody.appendChild(tr);
-      });
+      try {
+        JsBarcode("#svgMiniBarcode", "1309", {
+          format: "CODE128",
+          width: 0.95,
+          height: 22,
+          displayValue: false,
+          margin: 0,
+          background: "transparent",
+          lineColor: "#000000"
+        });
+      } catch (e) {}
+
+      const pinOnly = (pin.match(/\d{6}/) || [pin])[0];
+      const qrData = `${tid};${order};${pinOnly}`;
+      document.getElementById('qrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrData)}`;
     }
 
-    function navigateTo(view) {
-      if (view === 'create') {
-        viewList.classList.add('hidden');
-        viewCreate.classList.remove('hidden');
-        resetCreateForm();
-      } else {
-        viewCreate.classList.add('hidden');
-        viewList.classList.remove('hidden');
-        renderList();
+    function buildRotatedZpl() {
+      const tid = document.getElementById('inTid').value.trim();
+      const hub = document.getElementById('inHub').value.trim() || 'CCJ/KOT';
+      const order = document.getElementById('inOrder').value.trim() || 'S99090861540';
+      const name = document.getElementById('inName').value;
+      const addr1 = document.getElementById('inAddr1').value;
+      const landmark = document.getElementById('inLandmark').value;
+      const locality = document.getElementById('inLocality').value;
+      const pin = document.getElementById('inPin').value;
+      const state = document.getElementById('inState').value;
+      const pinOnly = (pin.match(/\d{6}/) || [pin])[0];
+
+      return `^XA
+~TA000
+~JSN
+^LT0
+^MNW
+^MTD
+^PON
+^PMN
+^LH0,0
+^JMA
+^PR5,5
+~SD30
+^JUS
+^LRN
+^CI27
+^PA0,1,1,0
+^XZ
+^XA
+^MMT
+^PW672
+^LL468
+^LS0
+
+^FX TOP HEADER ^FS
+^FO641,16^A0R,20,20^FDNDD E-Kart Logistics^FS
+^FO640,250^A0R,18,18^FDPREPAID^FS
+^FO635,340^GB26,90,26^FS
+^FO640,348^FR^A0R,17,17^FDPRIORITY^FS
+^FO223,17^BY2,2,76.2188940092166^BCN,76.2188940092166,N,N,N^FD${tid}^FS
+^FO571,130^A0I,14,17^FD${hub}^FS
+^FO358,131^A0I,17,17^FD${tid}^FS
+^FO129,11^A0R,20,20^FD13-09^FS
+^FO107,11^A0R,12,12^FDLIAADSJ270015039^FS
+^FO54,9^BY1,2,33.47926267281106^BCR,33.47926267281106,N,N,N^FD1309^FS
+^FO348,175^BQN,2,9^FDLA,${tid};${order};${pinOnly}^FS
+^FO325,170^A0R,19,19^FD${name}^FS
+^FO294,169^A0R,14,14^FD${addr1}^FS
+^FO274,169^A0R,13,13^FD${landmark}^FS
+^FO254,169^A0R,13,13^FD${locality}^FS
+^FO231,169^A0R,16,16^FD${pin}^FS
+^FO205,168^A0R,17,14^FD${state}^FS
+^FO34,227^A0R,20,20^FDNPQ^FS
+^FO93,323^A0R,14,14^FDOrdered Through Flipkart^FS
+^FO65,343^A0R,18,18^FD${order}^FS
+^XZ
+`;
+    }
+
+    async function downloadZipArchive() {
+      const tid = document.getElementById('inTid').value.trim();
+      if (!tid) {
+        alert("Please enter a Tracking ID.");
+        return;
+      }
+
+      try {
+        const zip = new JSZip();
+        const prnData = buildRotatedZpl();
+        zip.file(`shipmentId_${tid}.prn`, prnData);
+
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `shipments_${tid}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert("Failed to generate ZIP: " + err.message);
       }
     }
 
-    function resetCreateForm() {
-      currentDraftShipments = [];
-      shipmentCounter.innerText = '0';
-      scanInput.value = '';
-      scanInput.setAttribute('disabled', '');
-      saveBtn.setAttribute('disabled', '');
-      saveBtn.classList.remove('primary');
-      confirmBtn.setAttribute('disabled', '');
-      confirmBtn.classList.remove('success');
-      scanEmptyBox.classList.remove('hidden');
-      scanTableBox.classList.add('hidden');
-      shipmentsTableBody.innerHTML = '';
-      vehicleDisplayValue.innerText = 'Bike';
-      closeAllDropdowns();
-    }
-
-    function unlockScanInput() {
-      scanInput.removeAttribute('disabled');
-      scanInput.disabled = false;
-      scanInput.focus();
-    }
-
-    // Agent Dropdown Toggle
-    function toggleAgentDropdown(e) {
-      e.stopPropagation();
-      closeAllDropdowns();
-      agentOptions.classList.toggle('hidden');
-    }
-
-    function selectWishmaster(name) {
-      agentDisplayValue.innerText = name;
-      agentOptions.classList.add('hidden');
-      unlockScanInput();
-    }
-
-    // Vehicle Dropdown Toggle & Selection
-    function toggleVehicleDropdown(e) {
-      e.stopPropagation();
-      closeAllDropdowns();
-      vehicleOptionsMenu.classList.toggle('hidden');
-    }
-
-    function selectVehicle(type) {
-      vehicleDisplayValue.innerText = type;
-      
-      // Update selected styling in menu
-      const options = vehicleOptionsMenu.querySelectorAll('.react-select__option');
-      options.forEach(opt => {
-        if (opt.innerText.trim() === type) {
-          opt.classList.add('selected');
-        } else {
-          opt.classList.remove('selected');
-        }
-      });
-
-      vehicleOptionsMenu.classList.add('hidden');
-    }
-
-    function closeAllDropdowns() {
-      agentOptions.classList.add('hidden');
-      vehicleOptionsMenu.classList.add('hidden');
-    }
-
-    window.addEventListener('click', closeAllDropdowns);
-
-    scanInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const tid = scanInput.value.trim().toUpperCase();
-        if (!tid) return;
-
-        // Conflict check
-        const conflict = runsheets.find(rs => rs.trackingIds.includes(tid));
-        if (conflict) {
-          triggerToast(`Shipment [${tid}] is already part of active runsheet ${conflict.id}`);
-          scanInput.value = '';
-          return;
-        }
-
-        currentDraftShipments.push(tid);
-        shipmentCounter.innerText = currentDraftShipments.length;
-
-        scanEmptyBox.classList.add('hidden');
-        scanTableBox.classList.remove('hidden');
-
-        const tr = document.createElement('tr');
-        tr.id = tid;
-        tr.innerHTML = `
-          <td></td>
-          <td class="font-bold text-blue-700 font-mono">${tid}</td>
-          <td>2026-09-13 23:59:00</td>
-          <td>P4</td>
-          <td>0.0</td>
-          <td colspan="3">Door No. 12, Main Road, Kottakkal</td>
-          <td>676503</td>
-          <td><button class="text-red-500 hover:text-red-700">Delete</button></td>
-        `;
-        shipmentsTableBody.appendChild(tr);
-
-        saveBtn.removeAttribute('disabled');
-        saveBtn.disabled = false;
-        saveBtn.classList.add('primary');
-
-        confirmBtn.removeAttribute('disabled');
-        confirmBtn.disabled = false;
-        confirmBtn.classList.add('success');
-
-        scanInput.value = '';
+    function downloadSinglePrn() {
+      const tid = document.getElementById('inTid').value.trim();
+      if (!tid) {
+        alert("Please enter a Tracking ID.");
+        return;
       }
-    });
 
-    function executeSave(mode) {
-      if (currentDraftShipments.length === 0) return;
-
-      const newId = `RS-${Math.floor(10000 + Math.random() * 90000)}`;
-      runsheets.unshift({
-        id: newId,
-        agent: agentDisplayValue.innerText || "Muhammed Thasreef (3382163) | LAST_MILE",
-        count: currentDraftShipments.length,
-        trackingIds: [...currentDraftShipments],
-        vehicle: vehicleDisplayValue.innerText || "Bike",
-        status: mode === 'CONFIRM' ? 'DISPATCHED' : 'DRAFT'
-      });
-
-      navigateTo('list');
+      const prnData = buildRotatedZpl();
+      const blob = new Blob([prnData], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `shipmentId_${tid}.prn`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
 
-    let toastTimer;
-    function triggerToast(msg) {
-      clearTimeout(toastTimer);
-      document.getElementById('toast-text').innerText = msg;
-      const toast = document.getElementById('portal-toast');
-      toast.classList.remove('hidden');
-      toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
-    }
-
-    renderList();
+    render();
   </script>
 </body>
 </html>
