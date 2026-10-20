@@ -7,6 +7,7 @@ export default function KotAutomationConsoleGenerator() {
   // Common Configuration
   const [rawTids, setRawTids] = useState('');
   const [stepDelay, setStepDelay] = useState(1);
+  const [enableKeepAwake, setEnableKeepAwake] = useState(true); // Keep Awake Screen Lock Toggle
 
   // Live Watcher State (Manual Scan - Zero TIDs needed)
   const [enableWatcherCpd, setEnableWatcherCpd] = useState(true);
@@ -19,7 +20,7 @@ export default function KotAutomationConsoleGenerator() {
   const [enablePrcAutomation, setEnablePrcAutomation] = useState(false);
   const [isolateTracking, setIsolateTracking] = useState(true);
   const [enableExclusions, setEnableExclusions] = useState(true);
-  const [filterDuplicates, setFilterDuplicates] = useState(true); // Toggle to filter duplicates
+  const [filterDuplicates, setFilterDuplicates] = useState(true);
   const [excludeWords, setExcludeWords] = useState('FORWARD, UNDELIVERED, FLIPKART, ESCALATION, VERIFICATION, SHIPMENTS, PACKAGING, MANDATORY');
 
   // Runsheet Specific State
@@ -80,20 +81,47 @@ export default function KotAutomationConsoleGenerator() {
   // =========================================================================
   // KOT-ScanDeck: Manual Scan Live Alarm Watcher (Zero TIDs Required)
   // Generated on: ${new Date().toLocaleString()}
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const CONFIG = {
     enableRtoAlarm: ${enableWatcherRto},
     enableCpdAlarm: ${enableWatcherCpd},
-    debounceMs: ${debounceMs}
+    debounceMs: ${debounceMs},
+    keepAwake: ${enableKeepAwake}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+      wakeLock.addEventListener('release', () => {
+        console.log("💡 Screen lock released.");
+      });
+    } catch (err) {
+      console.warn("WakeLock request skipped:", err);
+    }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let isWatching = true;
   window.stopAlarmWatcher = () => {
     isWatching = false;
+    releaseWakeLock();
     if (window._kotObserver) window._kotObserver.disconnect();
     console.warn("⏹ Live Alarm Watcher stopped.");
   };
 
+  // Synthesized RTO Alarm (Sawtooth Siren)
   function playRtoAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -111,6 +139,7 @@ export default function KotAutomationConsoleGenerator() {
     } catch (e) {}
   }
 
+  // Synthesized CPD Alarm (Dual Chime for Today's CPD)
   function playCpdAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -131,7 +160,10 @@ export default function KotAutomationConsoleGenerator() {
 
   function getTodayDateString() {
     const d = new Date();
-    return \`\${d.getFullYear()}-\${String(d.getMonth() + 1).padStart(2, '0')}-\${String(d.getDate()).padStart(2, '0')}\`;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return \`\${yyyy}-\${mm}-\${dd}\`;
   }
 
   let lastAlarmTime = 0;
@@ -139,6 +171,7 @@ export default function KotAutomationConsoleGenerator() {
     if (!isWatching) return;
     const elements = Array.from(document.querySelectorAll('.sc-AykKC, .fmcvyS, div, td, tr, span'));
 
+    // 1. Check for IS RTO: YES
     let isRtoYesDetected = false;
     const rtoLabelNode = elements.find(el => {
       const text = el.textContent ? el.textContent.trim().toUpperCase() : '';
@@ -156,6 +189,7 @@ export default function KotAutomationConsoleGenerator() {
       if (bodyText.includes('IS RTO YES')) isRtoYesDetected = true;
     }
 
+    // 2. Check for CPD matching Today's Date
     let isTodayCpdDetected = false;
     const todayStr = getTodayDateString();
     const cpdLabelNode = elements.find(el => {
@@ -169,6 +203,7 @@ export default function KotAutomationConsoleGenerator() {
       if (containerText.includes(todayStr)) isTodayCpdDetected = true;
     }
 
+    // 3. Trigger alarm with debounce
     const now = Date.now();
     if (now - lastAlarmTime > CONFIG.debounceMs) {
       if (isRtoYesDetected && CONFIG.enableRtoAlarm) {
@@ -190,7 +225,7 @@ export default function KotAutomationConsoleGenerator() {
   console.log("%c⚡ KOT Live Alarm Watcher Active!", "color:#10b981;font-weight:bold;font-size:14px;");
   console.log("Ready for manual scanner input. Type stopAlarmWatcher() to disconnect.");
 })();`;
-  }, [enableWatcherRto, enableWatcherCpd, debounceMs]);
+  }, [enableWatcherRto, enableWatcherCpd, debounceMs, enableKeepAwake]);
 
   // SCRIPT 2: Turbo Runsheet Engine
   const runsheetScript = useMemo(() => {
@@ -199,6 +234,7 @@ export default function KotAutomationConsoleGenerator() {
   // KOT-ScanDeck: Turbo-Speed Auto-Runsheet Runner (Console Executable)
   // Generated on: ${new Date().toLocaleString()}
   // Target Queue: ${parsedTids.length} Shipments
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const CONFIG = {
     agentName: ${JSON.stringify(agentName)},
@@ -207,12 +243,32 @@ export default function KotAutomationConsoleGenerator() {
     stepDelay: ${stepDelay},
     isScheduled: ${scheduleEnabled},
     scheduleTime: ${JSON.stringify(scheduleTime)},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let isAborted = false;
   window.stopRunsheet = () => {
     isAborted = true;
+    releaseWakeLock();
     console.warn("⏹ Runsheet execution halted by user.");
   };
 
@@ -378,6 +434,7 @@ export default function KotAutomationConsoleGenerator() {
       }
     }
 
+    releaseWakeLock();
     document.title = "Runsheet Finished ✅";
     console.log(\`%c🏁 Complete! (\${saved} Saved, \${skipped} Skipped)\`, "color:#059669;font-weight:bold;font-size:14px;");
   }
@@ -401,7 +458,7 @@ export default function KotAutomationConsoleGenerator() {
     }, 1000);
   }
 })();`;
-  }, [parsedTids, agentName, vehicleType, actionType, stepDelay, scheduleEnabled, scheduleTime]);
+  }, [parsedTids, agentName, vehicleType, actionType, stepDelay, scheduleEnabled, scheduleTime, enableKeepAwake]);
 
   // SCRIPT 3: Scanner with Dual Engine & Alarms
   const scannerScript = useMemo(() => {
@@ -411,18 +468,39 @@ export default function KotAutomationConsoleGenerator() {
   // Generated on: ${new Date().toLocaleString()}
   // Target Queue: ${parsedTids.length} Shipments
   // Mode: ${enablePrcAutomation ? 'PRC AUTOMATION (Hardware Keystroke Simulation)' : 'NORMAL (Extreme Speed Native Setter)'}
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const SCANNER_CONFIG = {
     enableCpdAlarm: ${enableCpdAlarm},
     enableRtoAlarm: ${enableRtoAlarm},
     enablePrcAutomation: ${enablePrcAutomation},
     scanDelay: ${stepDelay},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!SCANNER_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let stopInjection = false;
   window.stopScanner = () => {
     stopInjection = true;
+    releaseWakeLock();
     console.warn("⏹ Scanner halted by user.");
   };
 
@@ -619,13 +697,14 @@ export default function KotAutomationConsoleGenerator() {
       }
     }
 
+    releaseWakeLock();
     document.title = "Scanning Completed ✅";
     console.log("%c🏁 Barcode Injection Completed!", "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startScanning();
 })();`;
-  }, [parsedTids, enableCpdAlarm, enableRtoAlarm, enablePrcAutomation, stepDelay]);
+  }, [parsedTids, enableCpdAlarm, enableRtoAlarm, enablePrcAutomation, stepDelay, enableKeepAwake]);
 
   // SCRIPT 4: Automated PRC (Return / Undelivered / Cancellation)
   const prcScript = useMemo(() => {
@@ -634,18 +713,39 @@ export default function KotAutomationConsoleGenerator() {
   // KOT-ScanDeck: PRC (Return / Cancellation) Automation
   // Generated on: ${new Date().toLocaleString()}
   // Total Shipments: ${parsedTids.length}
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const PRC_CONFIG = {
     stepDelay: ${stepDelay},
     primaryReason: ${JSON.stringify(prcReason)},
     subReason: ${JSON.stringify(prcSubReason)},
     bypassOtp: ${otpBypass},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!PRC_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let stopPrc = false;
   window.abortPrc = () => {
     stopPrc = true;
+    releaseWakeLock();
     console.warn("⏹ PRC Automation halted by user.");
   };
 
@@ -740,13 +840,14 @@ export default function KotAutomationConsoleGenerator() {
       }
     }
 
+    releaseWakeLock();
     document.title = "PRC Completed ✅";
     console.log(\`%c🏁 PRC Finished! (\${success} Completed, \${failed} Failed)\`, "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startPrcEngine();
 })();`;
-  }, [parsedTids, stepDelay, prcReason, prcSubReason, otpBypass]);
+  }, [parsedTids, stepDelay, prcReason, prcSubReason, otpBypass, enableKeepAwake]);
 
   const activeScript = useMemo(() => {
     if (activeTab === 'watcher') return watcherScript;
@@ -875,6 +976,25 @@ export default function KotAutomationConsoleGenerator() {
                 </div>
               </div>
             )}
+
+            {/* KEEP AWAKE / SCREEN LOCK TOGGLE CARD */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 shadow-sm">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">💡</span>
+                  <div>
+                    <span className="text-xs font-bold text-sky-300 block">Keep Screen Awake</span>
+                    <span className="text-[10px] text-slate-500">Prevent display sleep and screen timeout during operation</span>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableKeepAwake}
+                  onChange={(e) => setEnableKeepAwake(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-950 text-sky-500 focus:ring-0"
+                />
+              </label>
+            </div>
 
             {/* TAB 1: LIVE MANUAL SCAN WATCHER CONFIG (NO TIDs) */}
             {activeTab === 'watcher' && (
