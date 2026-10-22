@@ -6,12 +6,13 @@ export default function KotAutomationConsoleGenerator() {
 
   // Common Configuration
   const [rawTids, setRawTids] = useState('');
-  const [stepDelay, setStepDelay] = useState(1);
+  const [stepDelay, setStepDelay] = useState(500); // Default to 500ms matching runsheet.js
+  const [enableKeepAwake, setEnableKeepAwake] = useState(true);
 
   // Live Watcher State (Manual Scan - Zero TIDs needed)
   const [enableWatcherCpd, setEnableWatcherCpd] = useState(true);
   const [enableWatcherRto, setEnableWatcherRto] = useState(true);
-  const [debounceMs, setDebounceMs] = useState(500);
+  const [debounceMs, setDebounceMs] = useState(600);
 
   // Scanner & Alarms State (Bulk Queue)
   const [enableCpdAlarm, setEnableCpdAlarm] = useState(true);
@@ -19,10 +20,10 @@ export default function KotAutomationConsoleGenerator() {
   const [enablePrcAutomation, setEnablePrcAutomation] = useState(false);
   const [isolateTracking, setIsolateTracking] = useState(true);
   const [enableExclusions, setEnableExclusions] = useState(true);
-  const [filterDuplicates, setFilterDuplicates] = useState(true); // Toggle to filter duplicates
+  const [filterDuplicates, setFilterDuplicates] = useState(true);
   const [excludeWords, setExcludeWords] = useState('FORWARD, UNDELIVERED, FLIPKART, ESCALATION, VERIFICATION, SHIPMENTS, PACKAGING, MANDATORY');
 
-  // Runsheet Specific State
+  // Runsheet Specific State (Matching runsheet.js)
   const [agentName, setAgentName] = useState('Abdul Basith');
   const [vehicleType, setVehicleType] = useState('Bike');
   const [actionType, setActionType] = useState('DRAFT'); // 'DRAFT' | 'CONFIRM'
@@ -34,7 +35,7 @@ export default function KotAutomationConsoleGenerator() {
   const [prcSubReason, setPrcSubReason] = useState('Call Not Answered');
   const [otpBypass, setOtpBypass] = useState(true);
 
-  // Filter Tracking IDs using KOT regex, keyword exclusions, and deduplication rules
+  // Filter Tracking IDs
   const parsedTids = useMemo(() => {
     const rawLines = rawTids.split(/\s+/).map(s => s.trim()).filter(Boolean);
     const blocked = excludeWords
@@ -54,13 +55,11 @@ export default function KotAutomationConsoleGenerator() {
         continue;
       }
 
-      if (isolateTracking) {
-        if (regex.test(target)) {
-          target = target.toUpperCase();
-        } else {
-          continue;
-        }
+      if (isolateTracking && !regex.test(target)) {
+        continue;
       }
+
+      target = target.toUpperCase();
 
       if (filterDuplicates) {
         if (!seen.has(target)) {
@@ -74,43 +73,80 @@ export default function KotAutomationConsoleGenerator() {
     return result;
   }, [rawTids, isolateTracking, enableExclusions, filterDuplicates, excludeWords]);
 
-  // SCRIPT 1: Live Manual Scan Alarm Watcher (Zero TIDs)
+  // SCRIPT 1: Live Manual Scan Alarm Watcher
   const watcherScript = useMemo(() => {
     return `(() => {
   // =========================================================================
   // KOT-ScanDeck: Manual Scan Live Alarm Watcher (Zero TIDs Required)
   // Generated on: ${new Date().toLocaleString()}
+  // RTO Alarm: Triple Hazard Horn (Beep-Beep-Beep)
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const CONFIG = {
     enableRtoAlarm: ${enableWatcherRto},
     enableCpdAlarm: ${enableWatcherCpd},
-    debounceMs: ${debounceMs}
+    debounceMs: ${debounceMs},
+    keepAwake: ${enableKeepAwake}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+      wakeLock.addEventListener('release', () => {
+        console.log("💡 Screen lock released.");
+      });
+    } catch (err) {
+      console.warn("WakeLock request skipped:", err);
+    }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let isWatching = true;
   window.stopAlarmWatcher = () => {
     isWatching = false;
+    releaseWakeLock();
     if (window._kotObserver) window._kotObserver.disconnect();
     console.warn("⏹ Live Alarm Watcher stopped.");
   };
 
+  // Synthesized Triple Hazard Horn (Beep-Beep-Beep)
   function playRtoAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(650, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.35);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
+      [0, 0.22, 0.44].forEach(startOffset => {
+        [587.33, 880.00].forEach(freq => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          
+          const t = ctx.currentTime + startOffset;
+          osc.frequency.setValueAtTime(freq, t);
+          
+          gain.gain.setValueAtTime(0.25, t);
+          gain.gain.setValueAtTime(0.25, t + 0.14);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.17);
+          
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.17);
+        });
+      });
     } catch (e) {}
   }
 
+  // Synthesized CPD Alarm (Dual Harmonic Chime)
   function playCpdAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -131,7 +167,10 @@ export default function KotAutomationConsoleGenerator() {
 
   function getTodayDateString() {
     const d = new Date();
-    return \`\${d.getFullYear()}-\${String(d.getMonth() + 1).padStart(2, '0')}-\${String(d.getDate()).padStart(2, '0')}\`;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return \`\${yyyy}-\${mm}-\${dd}\`;
   }
 
   let lastAlarmTime = 0;
@@ -187,18 +226,19 @@ export default function KotAutomationConsoleGenerator() {
   window._kotObserver = new MutationObserver(() => inspectPageForAlerts());
   window._kotObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  console.log("%c⚡ KOT Live Alarm Watcher Active!", "color:#10b981;font-weight:bold;font-size:14px;");
+  console.log("%c⚡ KOT Live Alarm Watcher Active (Triple Hazard Horn RTO)!", "color:#10b981;font-weight:bold;font-size:14px;");
   console.log("Ready for manual scanner input. Type stopAlarmWatcher() to disconnect.");
 })();`;
-  }, [enableWatcherRto, enableWatcherCpd, debounceMs]);
+  }, [enableWatcherRto, enableWatcherCpd, debounceMs, enableKeepAwake]);
 
-  // SCRIPT 2: Turbo Runsheet Engine
+  // SCRIPT 2: Exact Extension Runsheet Engine (Exact runsheet.js Replication)
   const runsheetScript = useMemo(() => {
     return `(() => {
   // =========================================================================
-  // KOT-ScanDeck: Turbo-Speed Auto-Runsheet Runner (Console Executable)
+  // KOT-ScanDeck: Auto-Runsheet Engine (Exact runsheet.js Replication)
   // Generated on: ${new Date().toLocaleString()}
   // Target Queue: ${parsedTids.length} Shipments
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const CONFIG = {
     agentName: ${JSON.stringify(agentName)},
@@ -207,12 +247,32 @@ export default function KotAutomationConsoleGenerator() {
     stepDelay: ${stepDelay},
     isScheduled: ${scheduleEnabled},
     scheduleTime: ${JSON.stringify(scheduleTime)},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let isAborted = false;
   window.stopRunsheet = () => {
     isAborted = true;
+    releaseWakeLock();
     console.warn("⏹ Runsheet execution halted by user.");
   };
 
@@ -244,146 +304,227 @@ export default function KotAutomationConsoleGenerator() {
     return d;
   }
 
-  function instantInject(el, val) {
-    if (!el) return;
-    el.removeAttribute('disabled');
-    el.disabled = false;
-    el.focus();
-    
+  // Exact DOM Helper 1: Synthetic Value Injection from runsheet.js
+  async function injectValueIntoInput(inputEl, textValue) {
+    if (!inputEl) return false;
+    inputEl.removeAttribute('disabled');
+    inputEl.disabled = false;
+    inputEl.focus();
+    inputEl.click();
+
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (setter) setter.call(el, val); else el.value = val;
-    
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    
-    const k = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
-    el.dispatchEvent(new KeyboardEvent('keydown', k));
-    el.dispatchEvent(new KeyboardEvent('keyup', k));
+    if (setter) setter.call(inputEl, ''); else inputEl.value = '';
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 40));
+
+    if (setter) setter.call(inputEl, textValue); else inputEl.value = textValue;
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 40));
+
+    const enterParams = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+    inputEl.dispatchEvent(new KeyboardEvent('keydown', enterParams));
+    inputEl.dispatchEvent(new KeyboardEvent('keypress', enterParams));
+    inputEl.dispatchEvent(new KeyboardEvent('keyup', enterParams));
+    return true;
   }
 
-  function getSaveBtn(mode) {
-    return document.querySelector(
-      mode === 'CONFIRM' 
-        ? 'button[data-cy="saveAndConfirm"], button[data-testid="confirmRunsheet"]' 
-        : 'button[data-cy="save"], button[data-testid="saveRunsheet"]'
-    );
+  // Exact DOM Helper 2: Dismiss lingering toast alerts from runsheet.js
+  function dismissLingeringToasts() {
+    const closeButtons = document.querySelectorAll('div[data-cy="non-acionable-toast"] button, div[data-cy="toastMessage"] button, .Toastify__close-button');
+    closeButtons.forEach(btn => {
+      try { btn.click(); } catch (e) {}
+    });
   }
 
-  function detectConflict(tid) {
-    const alerts = document.querySelectorAll('div[data-cy="non-acionable-toast"], div[data-cy="toastMessage"], div[role="alert"]');
-    for (const el of alerts) {
-      const txt = (el.innerText || '').toUpperCase();
+  // Exact DOM Helper 3: Conflict detection logic from runsheet.js
+  function detectPreScanConflict(currentId) {
+    const errorContainers = Array.from(document.querySelectorAll('div[data-cy="non-acionable-toast"], div[data-cy="toastMessage"], div[role="alert"], .Toastify__toast-body'));
+    const conflictKeywords = ['ALREADY', 'ACTIVE RUNSHEET', 'NOT PRESENT IN DATABASE', 'DOES NOT EXIST', 'INVALID SHIPMENT'];
+
+    for (const el of errorContainers) {
+      if (el.closest('#barcode-injector-root')) continue;
+      const txt = (el.innerText || el.textContent || '').trim().toUpperCase();
+      if (!txt) continue;
+
       if (txt.includes('SAVING RUNSHEET')) continue;
-      if (txt.includes('ALREADY') || txt.includes('ACTIVE RUNSHEET') || txt.includes('NOT PRESENT') || txt.includes('INVALID SHIPMENT')) {
-        if (tid && !txt.includes(tid.toUpperCase()) && (txt.includes('FMPR') || txt.includes('MDGR') || txt.includes('MYSR'))) continue;
+
+      const isConflict = conflictKeywords.some(kw => txt.includes(kw));
+      if (isConflict) {
+        if (currentId && !txt.includes(currentId.toUpperCase()) && (txt.includes('FMPR') || txt.includes('MDGR') || txt.includes('MYSR'))) {
+          continue;
+        }
         return txt;
       }
     }
     return null;
   }
 
-  async function executeTurbo() {
-    console.log("%c⚡ Starting Turbo Runsheet Execution...", "color:#4f46e5;font-weight:bold;font-size:14px;");
+  // Exact DOM Helper 4: Save button resolver from runsheet.js
+  function getSaveButton(mode = 'DRAFT') {
+    if (mode === 'CONFIRM') {
+      return document.querySelector('button[data-cy="saveAndConfirm"], button[data-testid="confirmRunsheet"]');
+    }
+    return document.querySelector('button[data-cy="save"], button[data-testid="saveRunsheet"]');
+  }
+
+  // Exact DOM Helper 5: Button Span clicker from runsheet.js
+  function clickButtonOnce(btn) {
+    if (!btn) return;
+    btn.removeAttribute('disabled');
+    btn.disabled = false;
+    btn.focus();
+
+    const span = btn.querySelector('span');
+    if (span) {
+      span.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      span.click();
+    } else {
+      btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      btn.click();
+    }
+  }
+
+  // Main Loop from runsheet.js
+  async function startRunsheetExecution() {
+    console.log("%c🚀 Starting Runsheet Engine (runsheet.js Replication)...", "color:#4f46e5;font-weight:bold;font-size:14px;");
     playAlertChime();
-    let saved = 0, skipped = 0;
 
-    for (let i = 0; i < CONFIG.trackingIds.length; i++) {
+    let skippedCount = 0;
+    let successCount = 0;
+
+    for (let currentRsIndex = 0; currentRsIndex < CONFIG.trackingIds.length; currentRsIndex++) {
       if (isAborted) break;
-      const tid = CONFIG.trackingIds[i].trim();
-      if (!tid) continue;
 
-      document.title = \`[\${i + 1}/\${CONFIG.trackingIds.length}] \${tid}\`;
+      const currentTrackingId = CONFIG.trackingIds[currentRsIndex];
+      document.title = \`[\${currentRsIndex + 1}/\${CONFIG.trackingIds.length}] \${currentTrackingId}\`;
+      console.log(\`[\${currentRsIndex + 1}/\${CONFIG.trackingIds.length}] \${currentTrackingId}\`);
+
+      dismissLingeringToasts();
 
       try {
-        const createBtn = document.querySelector('button[data-cy="createRunsheetButton"], button[data-track-name="create_runsheet_click"]');
+        // Step 1: Open "Create Runsheet" view if on list
+        let createBtn = document.querySelector('button[data-cy="createRunsheetButton"], button[data-track-name="create_runsheet_click"]');
         if (createBtn && createBtn.offsetParent !== null) {
+          createBtn.focus();
           createBtn.click();
+          await new Promise(r => setTimeout(r, CONFIG.stepDelay + 100));
         }
 
+        // Step 2: Wishmaster Input
         let agentInput = document.querySelector('div[data-cy="selectComponent-agentId"] input, input[id^="react-select-44"]');
-        const waitStart = Date.now();
-        while (!agentInput && Date.now() - waitStart < 1500) {
-          await new Promise(r => setTimeout(r, 10));
+        const waitFormStart = Date.now();
+        while (!agentInput && Date.now() - waitFormStart < 2500) {
           agentInput = document.querySelector('div[data-cy="selectComponent-agentId"] input, input[id^="react-select-44"]');
+          await new Promise(r => setTimeout(r, 80));
         }
 
         if (agentInput) {
-          instantInject(agentInput, CONFIG.agentName);
-          await new Promise(r => setTimeout(r, 20));
-          const opt = document.querySelector('div[class*="-option"], #agent-options div');
-          if (opt) opt.click();
+          agentInput.focus();
+          await injectValueIntoInput(agentInput, CONFIG.agentName);
+          await new Promise(r => setTimeout(r, 150));
+          const option = document.querySelector('div[class*="-option"], #agent-options div');
+          if (option) option.click();
+          await new Promise(r => setTimeout(r, 100));
         }
 
-        const vInput = document.querySelector('div[data-cy="selectComponent-vehicleType"] input, input[id^="react-select-45"]');
-        if (vInput) {
-          instantInject(vInput, CONFIG.vehicleType);
-          await new Promise(r => setTimeout(r, 20));
-          const vOpt = document.querySelector('#vehicle-options-menu div, div[class*="-option"]');
-          if (vOpt) vOpt.click();
+        // Step 3: Vehicle Type Selection
+        const vehicleContainer = document.querySelector('div[data-cy="selectComponent-vehicleType"], div[data-testid="selectComponent-vehicleType"]');
+        const vehicleInput = vehicleContainer ? vehicleContainer.querySelector('input') : document.querySelector('input[id^="react-select-45"]');
+        if (vehicleContainer && vehicleInput) {
+          vehicleInput.focus();
+          vehicleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+          await injectValueIntoInput(vehicleInput, CONFIG.vehicleType);
+          await new Promise(r => setTimeout(r, 120));
+
+          const vehicleOptions = Array.from(document.querySelectorAll('#vehicle-options-menu div, div[class*="-option"]'));
+          const targetOpt = vehicleOptions.find(opt => (opt.innerText || opt.textContent || '').trim().toUpperCase().includes(CONFIG.vehicleType.toUpperCase())) || vehicleOptions[0];
+          if (targetOpt) {
+            targetOpt.click();
+            await new Promise(r => setTimeout(r, 100));
+          }
         }
 
-        const startScan = document.querySelector('button[data-cy="buttonStartScanning"]');
-        if (startScan && startScan.offsetParent !== null) {
-          startScan.click();
+        // Step 4: Click Start Scanning
+        const startScanBtn = document.querySelector('button[data-cy="buttonStartScanning"]');
+        if (startScanBtn && startScanBtn.offsetParent !== null) {
+          startScanBtn.focus();
+          startScanBtn.click();
+          await new Promise(r => setTimeout(r, 150));
         }
 
-        const scanInput = document.querySelector('input#enteredShipmentId, input[data-testid="enterShipment"]');
+        // Step 5: Input Tracking ID
+        let scanInput = document.querySelector('input#enteredShipmentId, input[data-testid="enterShipment"]');
         if (scanInput) {
-          instantInject(scanInput, tid);
+          scanInput.removeAttribute('disabled');
+          scanInput.disabled = false;
+          await injectValueIntoInput(scanInput, currentTrackingId);
         }
 
-        let saveBtn = null, conflict = null;
+        // Step 6: Wait & Validate Save Button or Conflict
+        let saveBtn = null;
+        let realConflict = null;
         const checkStart = Date.now();
-        while (Date.now() - checkStart < 1500) {
-          const btn = getSaveBtn(CONFIG.actionType);
+
+        while (Date.now() - checkStart < 2500) {
+          const btn = getSaveButton(CONFIG.actionType);
           if (btn && !btn.disabled && (btn.classList.contains('primary') || btn.classList.contains('success'))) {
             saveBtn = btn;
             break;
           }
-          conflict = detectConflict(tid);
-          if (conflict) break;
-          await new Promise(r => setTimeout(r, 10));
+
+          const conflict = detectPreScanConflict(currentTrackingId);
+          if (conflict) {
+            realConflict = conflict;
+            break;
+          }
+
+          await new Promise(r => setTimeout(r, 80));
         }
 
-        if (conflict || !saveBtn) {
-          console.warn(\`⚠️ Skipped \${tid}: \${conflict || 'Save not ready'}\`);
-          skipped++;
-          const disc = document.querySelector('button[data-cy="discardRunsheet"]');
-          if (disc) disc.click();
+        if (realConflict || !saveBtn) {
+          console.warn(\`⚠️ Skipped \${currentTrackingId}: \${realConflict || 'Validation failed'}\`);
+          skippedCount++;
+
+          const discardBtn = document.querySelector('button[data-cy="discardRunsheet"]');
+          if (discardBtn) discardBtn.click();
           await new Promise(r => setTimeout(r, CONFIG.stepDelay));
           continue;
         }
 
-        saveBtn.click();
-        saved++;
+        // Step 7: Save & Redirect Wait
+        clickButtonOnce(saveBtn);
+        successCount++;
 
-        const redStart = Date.now();
-        while (Date.now() - redStart < 2500) {
-          const listBtn = document.querySelector('button[data-cy="createRunsheetButton"]');
-          if (!document.querySelector('button[data-cy="save"]') || (listBtn && listBtn.offsetParent !== null)) {
+        const redirectStart = Date.now();
+        while (Date.now() - redirectStart < 4000) {
+          const listCreateBtn = document.querySelector('button[data-cy="createRunsheetButton"]');
+          if (!document.querySelector('button[data-cy="save"]') || (listCreateBtn && listCreateBtn.offsetParent !== null)) {
             break;
           }
-          await new Promise(r => setTimeout(r, 15));
+          await new Promise(r => setTimeout(r, 120));
         }
 
-        if (CONFIG.stepDelay > 0) {
-          await new Promise(r => setTimeout(r, CONFIG.stepDelay));
-        }
+        await new Promise(r => setTimeout(r, CONFIG.stepDelay + 100));
 
       } catch (err) {
-        console.error(\`Error processing \${tid}:\`, err);
-        skipped++;
-        const disc = document.querySelector('button[data-cy="discardRunsheet"]');
-        if (disc) disc.click();
+        console.error(\`Error on \${currentTrackingId}:\`, err);
+        skippedCount++;
+        const discardBtn = document.querySelector('button[data-cy="discardRunsheet"]');
+        if (discardBtn) discardBtn.click();
+        await new Promise(r => setTimeout(r, CONFIG.stepDelay));
       }
     }
 
+    releaseWakeLock();
     document.title = "Runsheet Finished ✅";
-    console.log(\`%c🏁 Complete! (\${saved} Saved, \${skipped} Skipped)\`, "color:#059669;font-weight:bold;font-size:14px;");
+    console.log(\`%c🏁 Done! (\${successCount} saved, \${skippedCount} skipped)\`, "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   if (!CONFIG.isScheduled) {
-    executeTurbo();
+    startRunsheetExecution();
   } else {
     const target = getScheduledDate(CONFIG.scheduleTime);
     console.log(\`%c⏰ Runsheet scheduled for \${CONFIG.scheduleTime} (\${target.toLocaleTimeString()})\`, "color:#6366f1;font-weight:bold;");
@@ -392,7 +533,7 @@ export default function KotAutomationConsoleGenerator() {
       const diff = target.getTime() - Date.now();
       if (diff <= 1000) {
         clearInterval(timer);
-        executeTurbo();
+        startRunsheetExecution();
       } else {
         const m = Math.floor((diff / 1000) / 60);
         const s = Math.floor((diff / 1000) % 60);
@@ -401,9 +542,9 @@ export default function KotAutomationConsoleGenerator() {
     }, 1000);
   }
 })();`;
-  }, [parsedTids, agentName, vehicleType, actionType, stepDelay, scheduleEnabled, scheduleTime]);
+  }, [parsedTids, agentName, vehicleType, actionType, stepDelay, scheduleEnabled, scheduleTime, enableKeepAwake]);
 
-  // SCRIPT 3: Scanner with Dual Engine & Alarms
+  // SCRIPT 3: Scanner with Dual Engine & Triple Hazard Horn Alarm
   const scannerScript = useMemo(() => {
     return `(() => {
   // =========================================================================
@@ -411,35 +552,65 @@ export default function KotAutomationConsoleGenerator() {
   // Generated on: ${new Date().toLocaleString()}
   // Target Queue: ${parsedTids.length} Shipments
   // Mode: ${enablePrcAutomation ? 'PRC AUTOMATION (Hardware Keystroke Simulation)' : 'NORMAL (Extreme Speed Native Setter)'}
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const SCANNER_CONFIG = {
     enableCpdAlarm: ${enableCpdAlarm},
     enableRtoAlarm: ${enableRtoAlarm},
     enablePrcAutomation: ${enablePrcAutomation},
     scanDelay: ${stepDelay},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!SCANNER_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let stopInjection = false;
   window.stopScanner = () => {
     stopInjection = true;
+    releaseWakeLock();
     console.warn("⏹ Scanner halted by user.");
   };
 
+  // Synthesized Triple Hazard Horn (Beep-Beep-Beep)
   function playSynthRtoAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(650, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.35);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
+      [0, 0.22, 0.44].forEach(startOffset => {
+        [587.33, 880.00].forEach(freq => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          
+          const t = ctx.currentTime + startOffset;
+          osc.frequency.setValueAtTime(freq, t);
+          
+          gain.gain.setValueAtTime(0.25, t);
+          gain.gain.setValueAtTime(0.25, t + 0.14);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.17);
+          
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.17);
+        });
+      });
     } catch (e) {}
   }
 
@@ -494,7 +665,7 @@ export default function KotAutomationConsoleGenerator() {
     }
 
     const now = Date.now();
-    if (now - lastAlarmTime > 500) {
+    if (now - lastAlarmTime > 600) {
       if (isRto && SCANNER_CONFIG.enableRtoAlarm) {
         console.warn("🚨 RTO DETECTED ON SCREEN!");
         playSynthRtoAlarm();
@@ -619,13 +790,14 @@ export default function KotAutomationConsoleGenerator() {
       }
     }
 
+    releaseWakeLock();
     document.title = "Scanning Completed ✅";
     console.log("%c🏁 Barcode Injection Completed!", "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startScanning();
 })();`;
-  }, [parsedTids, enableCpdAlarm, enableRtoAlarm, enablePrcAutomation, stepDelay]);
+  }, [parsedTids, enableCpdAlarm, enableRtoAlarm, enablePrcAutomation, stepDelay, enableKeepAwake]);
 
   // SCRIPT 4: Automated PRC (Return / Undelivered / Cancellation)
   const prcScript = useMemo(() => {
@@ -634,18 +806,39 @@ export default function KotAutomationConsoleGenerator() {
   // KOT-ScanDeck: PRC (Return / Cancellation) Automation
   // Generated on: ${new Date().toLocaleString()}
   // Total Shipments: ${parsedTids.length}
+  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
   const PRC_CONFIG = {
     stepDelay: ${stepDelay},
     primaryReason: ${JSON.stringify(prcReason)},
     subReason: ${JSON.stringify(prcSubReason)},
     bypassOtp: ${otpBypass},
+    keepAwake: ${enableKeepAwake},
     trackingIds: ${JSON.stringify(parsedTids, null, 2)}
   };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!PRC_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
 
   let stopPrc = false;
   window.abortPrc = () => {
     stopPrc = true;
+    releaseWakeLock();
     console.warn("⏹ PRC Automation halted by user.");
   };
 
@@ -740,13 +933,14 @@ export default function KotAutomationConsoleGenerator() {
       }
     }
 
+    releaseWakeLock();
     document.title = "PRC Completed ✅";
     console.log(\`%c🏁 PRC Finished! (\${success} Completed, \${failed} Failed)\`, "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startPrcEngine();
 })();`;
-  }, [parsedTids, stepDelay, prcReason, prcSubReason, otpBypass]);
+  }, [parsedTids, stepDelay, prcReason, prcSubReason, otpBypass, enableKeepAwake]);
 
   const activeScript = useMemo(() => {
     if (activeTab === 'watcher') return watcherScript;
@@ -775,7 +969,7 @@ export default function KotAutomationConsoleGenerator() {
               </span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Zero-install scripts. Run live alarms during manual barcode scanning, or execute turbo runsheets and return automations directly via F12.
+              Zero-install scripts. Run live alarms during manual barcode scanning, or execute runsheets and return automations directly via F12.
             </p>
           </div>
 
@@ -795,7 +989,7 @@ export default function KotAutomationConsoleGenerator() {
                 activeTab === 'runsheet' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              📋 Turbo Runsheet
+              📋 Auto-Runsheet
             </button>
             <button
               onClick={() => setActiveTab('scanner')}
@@ -876,6 +1070,25 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
+            {/* KEEP AWAKE / SCREEN LOCK TOGGLE CARD */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 shadow-sm">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">💡</span>
+                  <div>
+                    <span className="text-xs font-bold text-sky-300 block">Keep Screen Awake</span>
+                    <span className="text-[10px] text-slate-500">Prevent display sleep and screen timeout during operation</span>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableKeepAwake}
+                  onChange={(e) => setEnableKeepAwake(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-950 text-sky-500 focus:ring-0"
+                />
+              </label>
+            </div>
+
             {/* TAB 1: LIVE MANUAL SCAN WATCHER CONFIG (NO TIDs) */}
             {activeTab === 'watcher' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-4">
@@ -904,8 +1117,8 @@ export default function KotAutomationConsoleGenerator() {
 
                   <label className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
                     <div>
-                      <span className="text-xs font-bold text-amber-300 block">🔊 RTO Siren Alarm</span>
-                      <span className="text-[10px] text-slate-500">Sawtooth siren beeps when scanned shipment IS RTO is YES</span>
+                      <span className="text-xs font-bold text-amber-300 block">🔊 RTO Alarm (Triple Hazard Horn)</span>
+                      <span className="text-[10px] text-slate-500">Three-burst caution horn honks (Beep-Beep-Beep) when scanned shipment IS RTO is YES</span>
                     </div>
                     <input
                       type="checkbox"
@@ -937,7 +1150,7 @@ export default function KotAutomationConsoleGenerator() {
             {activeTab === 'runsheet' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 border-b border-slate-800 pb-2">
-                  Turbo-Runsheet Parameters
+                  Auto-Runsheet Parameters (runsheet.js Replication)
                 </h3>
                 
                 <div>
@@ -1045,7 +1258,7 @@ export default function KotAutomationConsoleGenerator() {
                   </label>
 
                   <label className="flex items-center justify-between p-2 rounded bg-slate-950 border border-slate-800 cursor-pointer">
-                    <span className="text-xs font-semibold text-amber-300">🔊 RTO Alarm</span>
+                    <span className="text-xs font-semibold text-amber-300">🔊 RTO Alarm (Triple Hazard Horn)</span>
                     <input
                       type="checkbox"
                       checked={enableRtoAlarm}
@@ -1113,8 +1326,8 @@ export default function KotAutomationConsoleGenerator() {
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min="0"
-                    step="1"
+                    min="200"
+                    step="50"
                     value={stepDelay}
                     onChange={(e) => setStepDelay(Number(e.target.value))}
                     className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-center font-bold text-white focus:outline-none"

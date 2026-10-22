@@ -1,564 +1,221 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ekart PRN & ZIP Generator</title>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ERP Mock: Shipment Reconciliation & Inspection</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; padding: 24px; margin: 0; }
+    .container { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 18px; }
+    h1 { margin: 0 0 6px 0; font-size: 18px; color: #38bdf8; }
+    p { margin: 0; font-size: 13px; color: #94a3b8; }
 
-    body {
-      background-color: #0d1117;
-      color: #f0f6fc;
-      font-family: Arial, Helvetica, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 24px 16px;
+    /* Controls */
+    .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
+    button.btn {
+      padding: 10px 14px; border: none; border-radius: 6px; font-weight: 700; font-size: 12px;
+      cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; gap: 6px;
     }
+    button.btn:active { transform: scale(0.98); }
+    .btn-rto { background: #dc2626; color: white; }
+    .btn-rto:hover { background: #b91c1c; }
+    .btn-cpd { background: #059669; color: white; }
+    .btn-cpd:hover { background: #047857; }
+    .btn-normal { background: #2563eb; color: white; }
+    .btn-normal:hover { background: #1d4ed8; }
+    .btn-random { background: #7c3aed; color: white; }
+    .btn-random:hover { background: #6d28d9; }
+    .btn-clear { background: #475569; color: white; }
+    .btn-clear:hover { background: #334155; }
 
-    .container {
-      display: grid;
-      grid-template-columns: 320px auto;
-      gap: 28px;
-      align-items: start;
-      max-width: 860px;
-      width: 100%;
+    /* Scanner Field */
+    .scan-area { display: flex; gap: 10px; margin-top: 12px; }
+    .scan-input {
+      flex: 1; padding: 10px 12px; background: #0f172a; border: 1px solid #475569; border-radius: 6px;
+      color: #fff; font-family: monospace; font-size: 14px; outline: none;
     }
+    .scan-input:focus { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
 
-    @media (max-width: 768px) {
-      .container {
-        grid-template-columns: 1fr;
-      }
-    }
+    /* ERP Table Styled Component Mocks */
+    .table-container { overflow-x: auto; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #0f172a; color: #94a3b8; text-align: left; padding: 10px; border-bottom: 1px solid #334155; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+    td { padding: 12px 10px; border-bottom: 1px solid #334155; vertical-align: middle; }
+    tr:hover { background: #243247; }
 
-    .form-panel {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
-    }
+    /* Realistic ERP Styled Components matching inspection logic */
+    .sc-AykKC { font-weight: 700; }
+    .fmcvyS { display: flex; flex-direction: column; gap: 2px; }
+    .badge-rto-yes { color: #ef4444; font-weight: 800; background: rgba(239, 68, 68, 0.15); padding: 2px 6px; border-radius: 4px; display: inline-block; width: fit-content; }
+    .badge-rto-no { color: #94a3b8; font-weight: 600; }
+    .badge-cpd-today { color: #10b981; font-weight: 800; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; display: inline-block; width: fit-content; }
+    .badge-cpd-future { color: #cbd5e1; }
 
-    .form-panel h2 {
-      font-size: 14px;
-      font-weight: 700;
-      color: #58a6ff;
-      margin-bottom: 12px;
-    }
-
-    .field {
-      margin-bottom: 8px;
-    }
-
-    label {
-      display: block;
-      font-size: 11px;
-      font-weight: 600;
-      color: #8b949e;
-      margin-bottom: 2px;
-    }
-
-    input {
-      width: 100%;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      color: #ffffff;
-      padding: 6px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      outline: none;
-    }
-
-    input:focus {
-      border-color: #58a6ff;
-    }
-
-    .btn-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    button {
-      width: 100%;
-      padding: 10px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      border: none;
-      transition: opacity 0.2s;
-    }
-
-    button:hover {
-      opacity: 0.9;
-    }
-
-    .btn-zip {
-      background-color: #f59e0b;
-      color: #ffffff;
-    }
-
-    .btn-prn {
-      background-color: #1f6feb;
-      color: #ffffff;
-    }
-
-    .preview-stage {
-      background: #21262d;
-      padding: 24px;
-      border-radius: 8px;
-      display: flex;
-      justify-content: center;
-    }
-
-    .label-canvas {
-      width: 310px;
-      height: 460px;
-      background: #ffffff;
-      color: #000000;
-      border-radius: 4px;
-      padding: 12px 14px 10px 14px;
-      position: relative;
-      font-family: Arial, Helvetica, sans-serif;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      user-select: none;
-    }
-
-    .top-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      height: 16px;
-      margin-bottom: 8px;
-    }
-
-    .brand-text {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: -0.1px;
-    }
-
-    .status-tags {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-    }
-
-    .status-prepaid {
-      font-size: 8.5px;
-      font-weight: 700;
-    }
-
-    .status-priority {
-      background: #000000;
-      color: #ffffff;
-      padding: 1.5px 3px;
-      font-weight: 900;
-      font-size: 8px;
-    }
-
-    .left-barcode-container {
-      position: absolute;
-      top: 34px;
-      left: 10px;
-      width: 50px;
-      height: 270px;
-    }
-
-    .rotator {
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform: rotate(-90deg) translate(-270px, 0);
-      transform-origin: top left;
-      display: flex;
-      align-items: center;
-      height: 50px;
-      width: 270px;
-    }
-
-    .rot-labels-col {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      height: 270px;
-      padding-left: 6px;
-      font-family: Arial, sans-serif;
-      font-weight: 700;
-      font-size: 8px;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .lower-left-section {
-      position: absolute;
-      top: 315px;
-      left: 10px;
-      width: 70px;
-    }
-
-    .batch-1 {
-      font-size: 10px;
-      font-weight: 800;
-      font-family: Arial, sans-serif;
-      line-height: 1.1;
-    }
-
-    .batch-2 {
-      font-size: 6.5px;
-      font-weight: 700;
-      font-family: Arial, sans-serif;
-      line-height: 1.1;
-      margin-top: 1px;
-      margin-bottom: 3px;
-    }
-
-    .right-section {
-      position: absolute;
-      top: 34px;
-      left: 78px;
-      width: 220px;
-    }
-
-    .qr-holder {
-      width: 195px;
-      height: 195px;
-    }
-
-    .qr-holder img {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    .address-holder {
-      margin-top: 8px;
-      font-size: 8.5px;
-      line-height: 1.25;
-      color: #000000;
-    }
-
-    .addr-name {
-      font-size: 9px;
-      font-weight: 800;
-      margin-bottom: 1px;
-    }
-
-    .bottom-row {
-      position: absolute;
-      top: 375px;
-      left: 78px;
-      width: 220px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-
-    .vendor-npq {
-      font-size: 9px;
-      font-weight: 800;
-      margin-left: 20px;
-    }
-
-    .flipkart-col {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      text-align: right;
-    }
-
-    .fk-text {
-      font-size: 7.5px;
-      font-weight: 600;
-    }
-
-    .fk-order {
-      font-size: 8.5px;
-      font-weight: 800;
-      font-family: Arial, sans-serif;
-    }
+    /* Log status */
+    .log-strip { margin-top: 10px; font-size: 11px; font-family: monospace; color: #94a3b8; display: flex; justify-content: space-between; }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <div class="form-panel">
-      <h2>Ekart Label Config</h2>
-
-      <div class="field">
-        <label>Tracking ID (TID) *</label>
-        <input type="text" id="inTid" value="FMPP4251661422" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Hub Code</label>
-        <input type="text" id="inHub" value="CCJ/KOT" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Order Reference ID</label>
-        <input type="text" id="inOrder" value="S99090861540" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Customer Name</label>
-        <input type="text" id="inName" value="Nasrin K" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Address Line 1</label>
-        <input type="text" id="inAddr1" value="Kuruniyan saw mill Othukkungal" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Landmark</label>
-        <input type="text" id="inLandmark" value="after the transformer" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>Locality</label>
-        <input type="text" id="inLocality" value="Nottanalakkal, Othukkungal, Near Jamia Ihyaussun" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>District & PIN</label>
-        <input type="text" id="inPin" value="Malappuram - 676528" oninput="render()" />
-      </div>
-
-      <div class="field">
-        <label>State</label>
-        <input type="text" id="inState" value="Kerala" oninput="render()" />
-      </div>
-
-      <div class="btn-group">
-        <button class="btn-zip" onclick="downloadZipArchive()">
-          📦 Download shipments_[TID].zip
-        </button>
-        <button class="btn-prn" onclick="downloadSinglePrn()">
-          📄 Download shipmentId_[TID].prn
-        </button>
-      </div>
+<div class="container">
+  <!-- Header -->
+  <div class="card">
+    <h1>📦 ERP Reconciliation & Inspection Simulation Deck</h1>
+    <p>Use this page to test the <strong>Live Scan Alarm Watcher</strong> or <strong>Scanner Injector</strong>. Open <code>F12</code> console, paste your script, and trigger test rows below.</p>
+    
+    <!-- Direct Barcode Input -->
+    <div class="scan-area">
+      <input type="text" id="enteredShipmentId" class="scan-input" placeholder="Click here and scan barcode or let script inject..." autofocus />
+      <button class="btn btn-normal" id="scan-manual-btn">⏎ Enter Scan</button>
     </div>
 
-    <!-- Live Preview Stage -->
-    <div class="preview-stage">
-      <div class="label-canvas">
-        <div class="top-header">
-          <span class="brand-text">NDD E-Kart Logistics</span>
-          <div class="status-tags">
-            <span class="status-prepaid">PREPAID</span>
-            <span class="status-priority">PRIORITY</span>
-          </div>
-        </div>
+    <!-- Quick Alarm Triggers -->
+    <div class="controls-grid">
+      <button class="btn btn-rto" id="btn-trigger-rto">🚨 Mock RTO (YES)</button>
+      <button class="btn btn-cpd" id="btn-trigger-cpd">📅 Mock Today's CPD</button>
+      <button class="btn btn-normal" id="btn-trigger-normal">✅ Mock Normal Package</button>
+      <button class="btn btn-random" id="btn-trigger-random">🎲 Mock Random 10 Items</button>
+      <button class="btn btn-clear" id="btn-clear-table">🗑️ Clear Table</button>
+    </div>
 
-        <div class="left-barcode-container">
-          <div class="rotator">
-            <svg id="svgMainBarcode"></svg>
-            <div class="rot-labels-col">
-              <span id="dispHub">CCJ/KOT</span>
-              <span id="dispTid">FMPP4251661422</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="lower-left-section">
-          <div class="batch-1">13-09</div>
-          <div class="batch-2">LIAADSJ270015039</div>
-          <svg id="svgMiniBarcode"></svg>
-        </div>
-
-        <div class="right-section">
-          <div class="qr-holder">
-            <img id="qrImg" src="" alt="QR" />
-          </div>
-
-          <div class="address-holder">
-            <div class="addr-name" id="dispName">Nasrin K</div>
-            <div id="dispAddr1">Kuruniyan saw mill Othukkungal</div>
-            <div id="dispLandmark">after the transformer</div>
-            <div id="dispLocality">Nottanalakkal, Othukkungal, Near Jamia Ihyaussun</div>
-            <div id="dispPin">Malappuram - 676528</div>
-            <div id="dispState">Kerala</div>
-          </div>
-        </div>
-
-        <div class="bottom-row">
-          <span class="vendor-npq">NPQ</span>
-          <div class="flipkart-col">
-            <span class="fk-text">Ordered Through Flipkart</span>
-            <span class="fk-order" id="dispOrder">S99090861540</span>
-          </div>
-        </div>
-      </div>
+    <div class="log-strip">
+      <span id="status-line">Status: Ready. Awaiting scan...</span>
+      <span id="row-counter">Total Scanned: 0</span>
     </div>
   </div>
 
-  <script>
-    function render() {
-      const tid = document.getElementById('inTid').value.trim() || 'FMPP4251661422';
-      const hub = document.getElementById('inHub').value.trim() || 'CCJ/KOT';
-      const order = document.getElementById('inOrder').value.trim() || 'S99090861540';
-      const name = document.getElementById('inName').value;
-      const addr1 = document.getElementById('inAddr1').value;
-      const landmark = document.getElementById('inLandmark').value;
-      const locality = document.getElementById('inLocality').value;
-      const pin = document.getElementById('inPin').value;
-      const state = document.getElementById('inState').value;
+  <!-- Replicated ERP Reconciliation Table -->
+  <div class="card">
+    <div class="table-container">
+      <table id="shipment-table">
+        <thead>
+          <tr>
+            <th>Tracking ID</th>
+            <th>Type</th>
+            <th>IS RTO Label & Status</th>
+            <th>CPD Scheduled</th>
+            <th>Destination Hub</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- Dynamic rows append here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
-      document.getElementById('dispHub').textContent = hub;
-      document.getElementById('dispTid').textContent = tid;
-      document.getElementById('dispName').textContent = name;
-      document.getElementById('dispAddr1').textContent = addr1;
-      document.getElementById('dispLandmark').textContent = landmark;
-      document.getElementById('dispLocality').textContent = locality;
-      document.getElementById('dispPin').textContent = pin;
-      document.getElementById('dispState').textContent = state;
-      document.getElementById('dispOrder').textContent = order;
+<script>
+  // Helper to format YYYY-MM-DD
+  function getTodayStr(offsetDays = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
 
-      try {
-        JsBarcode("#svgMainBarcode", tid, {
-          format: "CODE128",
-          width: 1.5,
-          height: 44,
-          displayValue: false,
-          margin: 0,
-          background: "transparent",
-          lineColor: "#000000"
-        });
-      } catch (e) {}
+  const tableBody = document.getElementById('table-body');
+  const statusLine = document.getElementById('status-line');
+  const rowCounter = document.getElementById('row-counter');
+  const scanInput = document.getElementById('enteredShipmentId');
 
-      try {
-        JsBarcode("#svgMiniBarcode", "1309", {
-          format: "CODE128",
-          width: 0.95,
-          height: 22,
-          displayValue: false,
-          margin: 0,
-          background: "transparent",
-          lineColor: "#000000"
-        });
-      } catch (e) {}
+  let count = 0;
 
-      const pinOnly = (pin.match(/\d{6}/) || [pin])[0];
-      const qrData = `${tid};${order};${pinOnly}`;
-      document.getElementById('qrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrData)}`;
+  // Insert a mock row with exact ERP DOM structures matching content.js detection
+  function addMockRow(tid, isRto, cpdDate, type = "Standard Forward") {
+    count++;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-shipment-id', tid);
+
+    // Exact Styled-Component structure: class="fmcvyS" with label class="sc-AykKC"
+    const rtoHtml = isRto
+      ? `<div class="fmcvyS"><span class="sc-AykKC">IS RTO:</span><span class="badge-rto-yes">YES</span></div>`
+      : `<div class="fmcvyS"><span class="sc-AykKC">IS RTO:</span><span class="badge-rto-no">NO</span></div>`;
+
+    const isToday = cpdDate === getTodayStr(0);
+    const cpdHtml = `<div class="fmcvyS"><span class="sc-AykKC">CPD:</span><span class="${isToday ? 'badge-cpd-today' : 'badge-cpd-future'}">${cpdDate}</span></div>`;
+
+    tr.innerHTML = `
+      <td><strong>${tid}</strong></td>
+      <td>${type}</td>
+      <td>${rtoHtml}</td>
+      <td>${cpdHtml}</td>
+      <td>KOT_MALAPPURAM (KOT/MPM)</td>
+      <td><button class="btn btn-clear" style="padding: 4px 8px; font-size: 11px;" onclick="this.closest('tr').remove();">Dismiss</button></td>
+    `;
+
+    // Prepend to top of table to simulate incoming reconciliation scan
+    tableBody.insertBefore(tr, tableBody.firstChild);
+
+    statusLine.textContent = `Scanned ${tid} | RTO: ${isRto ? 'YES 🚨' : 'NO'} | CPD: ${cpdDate}`;
+    rowCounter.textContent = `Total Scanned: ${count}`;
+  }
+
+  // Generate random Tracking ID
+  function generateTid() {
+    return 'FMPR' + Math.floor(100000000 + Math.random() * 900000000);
+  }
+
+  // 1. Mock RTO
+  document.getElementById('btn-trigger-rto').addEventListener('click', () => {
+    addMockRow(generateTid(), true, getTodayStr(2), "Undelivered Return");
+  });
+
+  // 2. Mock CPD Today
+  document.getElementById('btn-trigger-cpd').addEventListener('click', () => {
+    addMockRow(generateTid(), false, getTodayStr(0), "Critical Delivery");
+  });
+
+  // 3. Mock Normal
+  document.getElementById('btn-trigger-normal').addEventListener('click', () => {
+    addMockRow(generateTid(), false, getTodayStr(3), "Regular Forward");
+  });
+
+  // 4. Mock Random Batch
+  document.getElementById('btn-trigger-random').addEventListener('click', () => {
+    for (let i = 0; i < 10; i++) {
+      const isRto = Math.random() < 0.25; // 25% chance of RTO
+      const isCpd = Math.random() < 0.35; // 35% chance of today's CPD
+      const date = isCpd ? getTodayStr(0) : getTodayStr(Math.floor(Math.random() * 5) + 1);
+      setTimeout(() => {
+        addMockRow(generateTid(), isRto, date);
+      }, i * 300);
     }
+  });
 
-    function buildRotatedZpl() {
-      const tid = document.getElementById('inTid').value.trim();
-      const hub = document.getElementById('inHub').value.trim() || 'CCJ/KOT';
-      const order = document.getElementById('inOrder').value.trim() || 'S99090861540';
-      const name = document.getElementById('inName').value;
-      const addr1 = document.getElementById('inAddr1').value;
-      const landmark = document.getElementById('inLandmark').value;
-      const locality = document.getElementById('inLocality').value;
-      const pin = document.getElementById('inPin').value;
-      const state = document.getElementById('inState').value;
-      const pinOnly = (pin.match(/\d{6}/) || [pin])[0];
+  // 5. Clear Table
+  document.getElementById('btn-clear-table').addEventListener('click', () => {
+    tableBody.innerHTML = '';
+    count = 0;
+    rowCounter.textContent = 'Total Scanned: 0';
+    statusLine.textContent = 'Status: Cleared';
+  });
 
-      return `^XA
-~TA000
-~JSN
-^LT0
-^MNW
-^MTD
-^PON
-^PMN
-^LH0,0
-^JMA
-^PR5,5
-~SD30
-^JUS
-^LRN
-^CI27
-^PA0,1,1,0
-^XZ
-^XA
-^MMT
-^PW672
-^LL468
-^LS0
+  // Manual Scan Input Handler
+  function handleManualInput() {
+    const val = scanInput.value.trim().toUpperCase();
+    if (!val) return;
 
-^FX TOP HEADER ^FS
-^FO641,16^A0R,20,20^FDNDD E-Kart Logistics^FS
-^FO640,250^A0R,18,18^FDPREPAID^FS
-^FO635,340^GB26,90,26^FS
-^FO640,348^FR^A0R,17,17^FDPRIORITY^FS
-^FO223,17^BY2,2,76.2188940092166^BCN,76.2188940092166,N,N,N^FD${tid}^FS
-^FO571,130^A0I,14,17^FD${hub}^FS
-^FO358,131^A0I,17,17^FD${tid}^FS
-^FO129,11^A0R,20,20^FD13-09^FS
-^FO107,11^A0R,12,12^FDLIAADSJ270015039^FS
-^FO54,9^BY1,2,33.47926267281106^BCR,33.47926267281106,N,N,N^FD1309^FS
-^FO348,175^BQN,2,9^FDLA,${tid};${order};${pinOnly}^FS
-^FO325,170^A0R,19,19^FD${name}^FS
-^FO294,169^A0R,14,14^FD${addr1}^FS
-^FO274,169^A0R,13,13^FD${landmark}^FS
-^FO254,169^A0R,13,13^FD${locality}^FS
-^FO231,169^A0R,16,16^FD${pin}^FS
-^FO205,168^A0R,17,14^FD${state}^FS
-^FO34,227^A0R,20,20^FDNPQ^FS
-^FO93,323^A0R,14,14^FDOrdered Through Flipkart^FS
-^FO65,343^A0R,18,18^FD${order}^FS
-^XZ
-`;
-    }
+    // Simulate outcome based on prefix or random
+    const isRto = val.includes('RTO') || Math.random() < 0.3;
+    const isToday = val.includes('CPD') || Math.random() < 0.3;
+    const cpd = isToday ? getTodayStr(0) : getTodayStr(2);
 
-    async function downloadZipArchive() {
-      const tid = document.getElementById('inTid').value.trim();
-      if (!tid) {
-        alert("Please enter a Tracking ID.");
-        return;
-      }
+    addMockRow(val, isRto, cpd);
+    scanInput.value = '';
+    scanInput.focus();
+  }
 
-      try {
-        const zip = new JSZip();
-        const prnData = buildRotatedZpl();
-        zip.file(`shipmentId_${tid}.prn`, prnData);
+  document.getElementById('scan-manual-btn').addEventListener('click', handleManualInput);
+  scanInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleManualInput();
+  });
+</script>
 
-        const blob = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `shipments_${tid}.zip`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        alert("Failed to generate ZIP: " + err.message);
-      }
-    }
-
-    function downloadSinglePrn() {
-      const tid = document.getElementById('inTid').value.trim();
-      if (!tid) {
-        alert("Please enter a Tracking ID.");
-        return;
-      }
-
-      const prnData = buildRotatedZpl();
-      const blob = new Blob([prnData], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `shipmentId_${tid}.prn`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
-
-    render();
-  </script>
 </body>
 </html>
