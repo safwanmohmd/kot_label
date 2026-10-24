@@ -1,219 +1,219 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
+  Terminal,
   PlusCircle,
-  Layers,
-  History,
-  Settings,
-  Package,
-  ScanLine,
-  Menu,
-  Eye,
-  ShieldAlert,
-  Truck,
-  Users,
-  MailPlus,
-  X,
   FileCode,
-  FileSpreadsheet,
-  PackageCheck,
-  ListFilter,
-  FolderSymlink,
+  QrCode,
+  History,
+  Briefcase,
   Search,
-  Luggage,
-  Terminal // Added for Chromebook Console Script Generator
+  FileSpreadsheet,
+  CheckCircle,
+  ArrowUpDown,
+  Eye,
+  Truck,
+  ClipboardList,
+  Users,
+  HardDrive,
+  Mail,
+  Settings,
+  ShieldAlert,
+  LogOut,
+  Box,
+  Lock
 } from 'lucide-react';
-import { useState } from 'react';
 
-// Organized navigation configurations grouped by functional category
-const NAV_GROUPS = [
+const SIDEBAR_SECTIONS = [
   {
-    groupLabel: 'Core Terminal',
+    category: 'CORE TERMINAL',
     items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-      { to: '/chromebook', label: 'Chromebook Runner', icon: Terminal }, // Added /chromebook route
-      { to: '/create', label: 'Create Label', icon: PlusCircle },
-      { to: '/create-prn', label: 'PRN Label Generator', icon: FileCode },
-      { to: '/bulk', label: 'Bulk Barcodes', icon: ScanLine },
-      { to: '/history', label: 'Label History', icon: History },
-    ]
+      { id: 'dashboard', label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { id: 'chromebook', label: 'Chromebook Runner', path: '/chromebook', icon: Terminal },
+      { id: 'create', label: 'Create Label', path: '/create', icon: PlusCircle },
+      { id: 'create_prn', label: 'PRN Label Generator', path: '/create-prn', icon: FileCode },
+      { id: 'bulk', label: 'Bulk Barcodes', path: '/bulk', icon: QrCode },
+      { id: 'history', label: 'Label History', path: '/history', icon: History },
+    ],
   },
   {
-    groupLabel: 'Tracking & Inspection',
+    category: 'TRACKING & INSPECTION',
     items: [
-      { to: '/bags', label: 'Bag Dispatch Hub', icon: Luggage },
-      { to: '/search', label: 'Shipment Auditor', icon: Search },
-      { to: '/eod', label: 'EOD Report', icon: FileSpreadsheet },
-      { to: '/verifytid', label: 'Return Verification', icon: PackageCheck },
-      { to: '/sort', label: 'Tracking Sorter', icon: ListFilter },
-      { to: '/unmask', label: 'Unmask Deck', icon: Eye },
-      { to: '/lp', label: 'Lp Tracker', icon: ShieldAlert },
-      { to: '/manualdelivery', label: 'Manual Delivery', icon: Truck },
-    ]
+      { id: 'bags', label: 'Bag Dispatch Hub', path: '/bags', icon: Briefcase },
+      { id: 'search', label: 'Shipment Auditor', path: '/search', icon: Search },
+      { id: 'eod', label: 'EOD Report', path: '/eod', icon: FileSpreadsheet },
+      { id: 'verifytid', label: 'Return Verification', path: '/verifytid', icon: CheckCircle },
+      { id: 'sort', label: 'Tracking Sorter', path: '/sort', icon: ArrowUpDown },
+      { id: 'unmask', label: 'Unmask Deck', path: '/unmask', icon: Eye },
+      { id: 'lp', label: 'Lp Tracker', path: '/lp', icon: Truck },
+      { id: 'manualdelivery', label: 'Manual Delivery', path: '/manualdelivery', icon: ClipboardList },
+    ],
   },
   {
-    groupLabel: 'Directory Tools',
+    category: 'DIRECTORY TOOLS',
     items: [
-      { to: '/vendors', label: 'Vendor Directory', icon: Users },
-      { to: '/gdrive', label: 'GDrive Vault', icon: FolderSymlink },
-      { to: '/lossgen', label: 'Loss Log Email Gen', icon: MailPlus },
-    ]
+      { id: 'vendors', label: 'Vendor Directory', path: '/vendors', icon: Users },
+      { id: 'gdrive', label: 'GDrive Vault', path: '/gdrive', icon: HardDrive },
+      { id: 'lossgen', label: 'Loss Log Email Gen', path: '/lossgen', icon: Mail },
+    ],
   },
   {
-    groupLabel: 'System & Config',
+    category: 'SYSTEM & CONFIG',
     items: [
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ]
-  }
+      { id: 'settings', label: 'Settings', path: '/settings', icon: Settings },
+    ],
+  },
 ];
 
-// Flattened list mapping helper for the top header page matching logic
-const ALL_NAV_ITEMS = NAV_GROUPS.flatMap(group => group.items);
-
 export function AppShell({ children }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { hasAccess, canSeeInNav, profile, signOut } = useAuth();
   const location = useLocation();
 
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const currentTitle = (() => {
+    if (location.pathname === '/') return 'Dashboard';
+    if (location.pathname === '/admin/users') return 'User Management';
+    for (const sec of SIDEBAR_SECTIONS) {
+      const match = sec.items.find((item) => item.path === location.pathname);
+      if (match) return match.label;
+    }
+    return 'Dashboard';
+  })();
+
   return (
-    <div className="min-h-screen bg-ink-50 flex">
-      {/* DESKTOP SIDEBAR */}
-      <aside className="hidden lg:flex w-64 flex-col bg-ink-900 text-white no-print">
-        <SidebarContent />
-      </aside>
-
-      {/* MOBILE DRAWER LAYER */}
-      {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 no-print">
-          <div
-            className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-ink-900 text-white flex flex-col animate-slide-in">
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="absolute top-4 right-4 text-ink-400 hover:text-white"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
-          </aside>
-        </div>
-      )}
-
-      {/* VIEWPORT CONTROLLER */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-ink-200 flex items-center justify-between px-4 lg:px-8 no-print">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="lg:hidden text-ink-600 hover:text-ink-900"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
+    <div className="flex h-screen bg-[#f8fafc] text-slate-800 font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-64 bg-[#0a1128] text-slate-300 flex flex-col justify-between shrink-0 select-none border-r border-[#162044]">
+        <div className="flex flex-col h-full overflow-hidden">
+          {/* Logo Area */}
+          <div className="p-4 flex items-center gap-3 border-b border-[#162044]/80">
+            <div className="w-9 h-9 rounded-lg bg-[#2563eb] flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+              <Box className="w-5 h-5" />
+            </div>
             <div>
-              <h1 className="text-base font-bold text-ink-900">
-                {ALL_NAV_ITEMS.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to) && n.to !== '/'))?.label ?? 'Dashboard'}
-              </h1>
-              <p className="text-xs text-ink-500 hidden sm:block">
-                {new Date().toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
+              <div className="font-extrabold text-white text-sm tracking-wider">KOT</div>
+              <div className="text-[10px] text-slate-400 font-medium tracking-widest uppercase -mt-0.5">
+                WAREHOUSE EDITION
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 text-xs text-ink-500">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse-soft" />
+
+          {/* Navigation Links */}
+          <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-5 custom-sidebar-scroll">
+            {SIDEBAR_SECTIONS.map((sec) => {
+              // Filters based on canSeeInNav (either user has permission OR show_all_nav_items is true)
+              const navItems = sec.items.filter((item) => canSeeInNav(item.id));
+              if (navItems.length === 0) return null;
+
+              return (
+                <div key={sec.category}>
+                  <div className="px-3 pb-1.5 text-[10px] font-semibold text-slate-500 tracking-wider">
+                    {sec.category}
+                  </div>
+                  <div className="space-y-0.5">
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = location.pathname === item.path;
+                      const isPermitted = hasAccess(item.id);
+
+                      return (
+                        <Link
+                          key={item.id}
+                          to={item.path}
+                          className={`flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            isActive
+                              ? 'bg-[#2563eb] text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-[#131c3b]'
+                          } ${!isPermitted ? 'opacity-70' : ''}`}
+                        >
+                          <div className="flex items-center gap-3 truncate">
+                            <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          {!isPermitted && (
+                            <Lock className="w-3 h-3 text-slate-500 shrink-0 ml-1.5" />
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Admin Management Link */}
+            {profile?.is_admin && (
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-semibold text-amber-500/80 tracking-wider">
+                  ADMINISTRATION
+                </div>
+                <Link
+                  to="/admin/users"
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    location.pathname === '/admin/users'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-amber-400/90 hover:text-amber-300 hover:bg-[#131c3b]'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="truncate">User Access Permissions</span>
+                </Link>
+              </div>
+            )}
+          </nav>
+
+          {/* User & Signout */}
+          {profile && (
+            <div className="p-3 border-t border-[#162044] bg-[#070d20] flex items-center justify-between text-xs text-slate-400">
+              <span className="truncate max-w-[140px] text-[11px] text-slate-300">{profile.email}</span>
+              <button
+                onClick={signOut}
+                title="Sign out"
+                className="text-slate-400 hover:text-rose-400 p-1 rounded transition"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Viewport */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#f8fafc]">
+        <header className="h-16 bg-white border-b border-slate-200/80 px-8 flex items-center justify-between shrink-0">
+          <div>
+            <h1 className="text-base font-bold text-slate-900 leading-tight">{currentTitle}</h1>
+            <p className="text-xs text-slate-400 leading-tight">{currentDate}</p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               System online
             </div>
-            
-            {/* ACTIVE ACTION HUB REDIRECT BUTTON */}
-            <NavLink 
+            <Link
               to="/settings"
-              className={({ isActive }) => 
-                `h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold transition-all border ${
-                  isActive 
-                    ? 'bg-brand-600 border-brand-700 text-white shadow-xs' 
-                    : 'bg-ink-100 border-ink-200 text-ink-700 hover:bg-ink-200'
-                }`
-              }
-              title="System Settings Configuration"
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition"
             >
-              <Settings className="h-4 w-4" />
-            </NavLink>
+              <Settings className="w-4 h-4" />
+            </Link>
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-8">
+          {children}
+        </main>
       </div>
     </div>
   );
 }
 
-function SidebarContent({ onNavigate }) {
-  return (
-    <>
-      {/* BRAND HEADER DISPLAY LOGO BOX */}
-      <div className="h-16 flex items-center gap-2.5 px-4 border-b border-ink-800">
-        <div className="h-8 w-8 rounded-lg bg-brand-600 flex items-center justify-center">
-          <Package className="h-4 w-4 text-white" />
-        </div>
-        <div>
-          <p className="text-sm font-bold text-white">KOT</p>
-          <p className="text-[10px] text-ink-400 uppercase tracking-wider">Warehouse Edition</p>
-        </div>
-      </div>
-
-      {/* SCROLLABLE CATEGORIZED SIDE NAVIGATION */}
-      <nav className="flex-1 py-3 px-2.5 space-y-3.5 overflow-y-auto">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.groupLabel} className="space-y-0.5">
-            <h3 className="px-2.5 text-[9px] font-bold text-ink-500 uppercase tracking-widest mb-1">
-              {group.groupLabel}
-            </h3>
-            
-            <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    onClick={onNavigate}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        isActive
-                          ? 'bg-brand-600 text-white font-semibold'
-                          : 'text-ink-300 hover:bg-ink-800/60 hover:text-white'
-                      }`
-                    }
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      {/* CONSOLE STATUS FOOTER META CARD */}
-      <div className="p-2.5 border-t border-ink-800">
-        <div className="rounded-lg bg-ink-800/40 p-2 border border-ink-800/60">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <Layers className="h-3.5 w-3.5 text-brand-400" />
-            <p className="text-[11px] font-bold text-white">Courier API Ready</p>
-          </div>
-          <p className="text-[10px] text-ink-400 leading-tight">
-            Structure supports integration vectors via regional endpoint routing models.
-          </p>
-        </div>
-      </div>
-    </>
-  );
-}
+export default AppShell;

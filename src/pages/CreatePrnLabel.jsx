@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import JsBarcode from 'jsbarcode';
 import JSZip from 'jszip';
@@ -6,6 +6,7 @@ import {
   Save,
   Printer,
   RotateCcw,
+  RotateCw,
   Truck,
   User,
   Hash,
@@ -21,6 +22,9 @@ import {
   Square,
   Layout,
   Sparkles,
+  Code2,
+  RefreshCw,
+  Sliders,
 } from 'lucide-react';
 import { CUSTOM_LABEL_SIZE_KEY, useSettings } from '../lib/settings.js';
 import { useToast } from '../lib/useToast.jsx';
@@ -34,20 +38,82 @@ import {
 import { buildPrintDocument, printHtml } from '../lib/print.js';
 import { sanitizeForCode39, supportsValue } from '../lib/barcode.js';
 
-// Preset Receiver Default Details
+// Exact Horizontal (Landscape) Ekart Pouch Template (Width 672 x Height 468)
+export const DEFAULT_CUSTOM_ZPL_TEMPLATE = `^XA
+~TA000
+~JSN
+^LT0
+^MNW
+^MTD
+^PON
+^PMN
+^LH0,0
+^JMA
+^PR4,4
+~SD22
+^JUS
+^LRN
+^CI27
+^PA0,1,1,0
+^XZ
+^XA
+^MMT
+^PW672
+^LL468
+^LS0
+
+^FX --- TOP HEADER --- ^FS
+^FO641,16^A0R,20,20^FDNDD E-Kart Logistics^FS
+^FO640,250^A0R,18,18^FDPREPAID^FS
+^FO635,340^GB26,90,26^FS
+^FO640,348^FR^A0R,17,17^FDPRIORITY^FS
+
+^FX --- LEFT VERTICAL CODE 128 BARCODE --- ^FS
+^FO255,24^BY2,3,76^BCN,76,N,N,N,A^FD\${tid}^FS
+^FO571,100^A0I,16,14^FD\${hub}^FS
+^FO258,100^A0I,16,14^FD\${tid}^FS
+
+^FX --- LOWER LEFT BATCH & MINI BARCODE --- ^FS
+^FO129,16^A0R,20,20^FD\${dateVal}^FS
+^FO107,16^A0R,12,12^FD\${batchCode}^FS
+^FO50,16^BY1,2,32^BCR,32,N,N,N^FD\${miniCodeData}^FS
+
+^FX --- ENLARGED 2D DATA MATRIX --- ^FS
+^FO363,167^BXR,12,200^FD\${tid};\${order};\${pinOnly}^FS
+
+^FX --- RECIPIENT ADDRESS --- ^FS
+^FO295,165^A0R,20,18^FD\${name}^FS
+^FO270,165^A0R,17,14^FD\${addr1}^FS
+^FO250,165^A0R,16,13^FD\${landmark}^FS
+^FO230,165^A0R,16,13^FD\${locality}^FS
+^FO206,165^A0R,18,15^FD\${pin}^FS
+^FO182,165^A0R,17,14^FD\${state}^FS
+
+^FX --- BOTTOM FOOTER --- ^FS
+^FO34,227^A0R,20,20^FD\${footerTag}^FS
+^FO93,310^A0R,15,13^FDOrdered Through Flipkart^FS
+^FO65,335^A0R,18,17^FD\${order}^FS
+^XZ`;
+
+const getTodayDDMM = () => {
+  const d = new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}-${month}`;
+};
+
 const PRESET_RECEIVER = {
-  receiver_name: 'Receiver Name',
-  address_line1: 'Address Line 1',
-  address_line2: 'Address Line 2',
-  receiver_city: 'City Name',
-  receiver_postal_code: '676505',
+  receiver_name: 'Nasrin K',
+  address_line1: 'Kuruniyan saw millOthukkungal',
+  address_line2: 'after the transformer, Nottanalakkal',
+  receiver_city: 'Malappuram',
+  receiver_postal_code: '676528',
   receiver_country: 'India',
   receiver_phone: '9876543210',
 };
 
-// Initial Form State
 const EMPTY = {
-  tracking_id: '',
+  tracking_id: 'FMPP4273763844',
   quick_address_input: '',
   ...PRESET_RECEIVER,
   sender_name: '',
@@ -57,18 +123,87 @@ const EMPTY = {
   courier_service: '',
   weight: '',
   dimensions: '',
-  notes: '',
-  label_size: '100x150',
-  label_style: 'standard', // 'standard' | 'dual' | 'bold'
+  notes: '$99090861540',
+  label_size: '75x50',
+  label_style: 'standard', // Normal layout by default
   barcode_type: 'CODE128',
   show_second_barcode: true,
+  custom_zpl_template: DEFAULT_CUSTOM_ZPL_TEMPLATE,
+  template_vars: {
+    hub: 'CC/KOT',
+    dateVal: getTodayDDMM(),
+    batchCode: 'LIAADSJ270015039',
+    footerTag: 'NPQ',
+    miniCodeData: 'FMPP4273763844676528',
+  },
 };
 
-// Generates raw PRN ZPL string based on selected label style
+const KNOWN_VARS_META = {
+  hub: { label: 'Mother Hub Code', desc: 'e.g. CC/KOT' },
+  dateVal: { label: 'Dispatch Date', desc: 'DD-MM format (e.g. 13-09)' },
+  batchCode: { label: 'Batch / LIA Code', desc: 'e.g. LIAADSJ270015039' },
+  footerTag: { label: 'Footer Routing Code', desc: 'e.g. NPQ' },
+  miniCodeData: { label: 'Mini Barcode Data', desc: 'Bottom-left barcode string' },
+};
+
+function extractTemplateVariables(zplString) {
+  if (!zplString) return [];
+  const matches = zplString.matchAll(/\$\{([a-zA-Z0-9_]+)\}/g);
+  const vars = new Set();
+  for (const m of matches) {
+    vars.add(m[1]);
+  }
+  return Array.from(vars);
+}
+
+export function compileCustomZpl(template, form) {
+  const tVars = form.template_vars || {};
+  const tid = form.tracking_id || 'FMPP4273763844';
+  const order = form.notes || tVars.order || '$99090861540';
+  const pin = form.receiver_postal_code || '676528';
+  const pinOnly = pin.replace(/\D/g, '') || '676528';
+  const name = (form.receiver_name || '').toUpperCase();
+  const addr1 = (form.address_line1 || '').toUpperCase();
+  const landmark = (form.address_line2 || '').toUpperCase();
+  const locality = `${(form.receiver_city || '').toUpperCase()} - ${pinOnly}`;
+  const state = (form.receiver_country === 'India' ? 'Kerala' : form.receiver_country || '').toUpperCase();
+  const hub = tVars.hub || 'CC/KOT';
+  const dateVal = tVars.dateVal || getTodayDDMM();
+  const batchCode = tVars.batchCode || 'LIAADSJ270015039';
+  const footerTag = tVars.footerTag || 'NPQ';
+  const miniCodeData = tVars.miniCodeData || `${tid}${pinOnly}`;
+
+  const valueMap = {
+    tid,
+    order,
+    pin,
+    pinOnly,
+    name,
+    addr1,
+    landmark,
+    locality,
+    state,
+    hub,
+    dateVal,
+    batchCode,
+    footerTag,
+    miniCodeData,
+    ...tVars,
+  };
+
+  return (template || DEFAULT_CUSTOM_ZPL_TEMPLATE).replace(
+    /\$\{([a-zA-Z0-9_]+)\}/g,
+    (_, varKey) => (valueMap[varKey] !== undefined ? String(valueMap[varKey]) : '')
+  );
+}
+
 function generatePrnContent(form) {
   const style = form.label_style || 'standard';
 
-  // STYLE 2: DUAL STACKED
+  if (style === 'custom') {
+    return compileCustomZpl(form.custom_zpl_template, form);
+  }
+
   if (style === 'dual') {
     return `CT~~CD,~CC^~CT~
 ^XA
@@ -96,7 +231,6 @@ ${form.notes ? `^BY2,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 `;
   }
 
-  // STYLE 3: HIGH DENSITY / BOLD TRACKING
   if (style === 'bold') {
     return `CT~~CD,~CC^~CT~
 ^XA
@@ -124,14 +258,13 @@ ${form.notes ? `^BY2,2,35^FT30,245^BCN,,N,N,N\n^FD${form.notes}^FS\n` : ''}
 `;
   }
 
-  // STYLE 1: STANDARD LOGISTICS
+  // Standard Logistics (Horizontal)[cite: 5]
   const line1 = form.address_line1 ? `^FT30,150^A0N,22,22^CI28^FD${form.address_line1}^FS^CI27\n` : '';
   const line2 = form.address_line2 ? `^FT30,178^A0N,22,22^CI28^FD${form.address_line2}^FS^CI27\n` : '';
   const backupData = form.notes || form.tracking_id || '';
   const hasSecond = form.show_second_barcode && backupData;
-
   const lineLength = hasSecond ? 510 : 637;
-  
+
   const secondBarcodeZpl = hasSecond
     ? `^BY2,2,40^FO570,35^BCR,40,N,N,N\n^FD${backupData}^FS\n^FT640,400^A0R,14,14^FD${backupData}^FS\n`
     : '';
@@ -177,7 +310,6 @@ ${secondBarcodeZpl}^FO16,290^GB${lineLength},0,2^FS
 `;
 }
 
-// SVG Generator for Barcode
 function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayValue = false, moduleWidth = 2) {
   if (!trackingId) return '';
   try {
@@ -200,7 +332,6 @@ function generateBarcodeSvgString(trackingId, barcodeType, height = 75, displayV
   }
 }
 
-// Smart Parser for Multi-line & Comma-separated Indian Courier Addresses
 function parseRawAddressText(rawText) {
   if (!rawText || !rawText.trim()) return {};
 
@@ -218,12 +349,11 @@ function parseRawAddressText(rawText) {
   let phone = '';
   let name = '';
   let city = '';
-  let state = '';
   const addressParts = [];
 
   const indianStates = [
-    'KERALA', 'TAMIL NADU', 'KARNATAKA', 'MAHARASHTRA', 'DELHI', 
-    'TELANGANA', 'ANDHRA PRADESH', 'GUJARAT', 'WEST BENGAL', 'UTTAR PRADESH'
+    'KERALA', 'TAMIL NADU', 'KARNATAKA', 'MAHARASHTRA', 'DELHI',
+    'TELANGANA', 'ANDHRA PRADESH', 'GUJARAT', 'WEST BENGAL', 'UTTAR PRADESH',
   ];
 
   const pinMatch = rawText.match(/\b\d{6}\b/);
@@ -234,19 +364,13 @@ function parseRawAddressText(rawText) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-
     if (line === pincode || line === phone || /^\d{6}$/.test(line)) continue;
-
-    if (indianStates.includes(line.toUpperCase())) {
-      state = line;
-      continue;
-    }
+    if (indianStates.includes(line.toUpperCase())) continue;
 
     if (!name && !/^\d+$/.test(line) && line.length < 40) {
       name = line;
       continue;
     }
-
     addressParts.push(line);
   }
 
@@ -259,13 +383,10 @@ function parseRawAddressText(rawText) {
     }
   }
 
-  const addr1 = addressParts[0] || '';
-  const addr2 = addressParts.slice(1).join(', ') || '';
-
   return {
     receiver_name: name || '',
-    address_line1: addr1,
-    address_line2: addr2,
+    address_line1: addressParts[0] || '',
+    address_line2: addressParts.slice(1).join(', ') || '',
     receiver_city: city || '',
     receiver_postal_code: pincode || '',
     receiver_phone: phone || '',
@@ -282,7 +403,13 @@ export function CreatePrnLabel() {
   const [printing, setPrinting] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [savedId, setSavedId] = useState(id ?? null);
+  const [previewRotation, setPreviewRotation] = useState(0);
+
+  const detectedVariables = useMemo(() => {
+    return extractTemplateVariables(form.custom_zpl_template);
+  }, [form.custom_zpl_template]);
 
   useEffect(() => {
     if (!id) return;
@@ -293,29 +420,20 @@ export function CreatePrnLabel() {
         const label = await fetchLabel(id);
         if (cancelled || !label) return;
         const addrLines = (label.receiver_address || '').split('\n');
-        setForm({
-          tracking_id: label.tracking_id ?? '',
-          quick_address_input: '',
-          receiver_name: label.receiver_name ?? PRESET_RECEIVER.receiver_name,
-          address_line1: addrLines[0] ?? PRESET_RECEIVER.address_line1,
-          address_line2: addrLines[1] ?? PRESET_RECEIVER.address_line2,
-          receiver_phone: label.receiver_phone ?? PRESET_RECEIVER.receiver_phone,
-          receiver_city: label.receiver_city ?? PRESET_RECEIVER.receiver_city,
-          receiver_postal_code: label.receiver_postal_code ?? PRESET_RECEIVER.receiver_postal_code,
-          receiver_country: label.receiver_country ?? PRESET_RECEIVER.receiver_country,
-          sender_name: label.sender_name ?? '',
-          sender_address: label.sender_address ?? '',
-          sender_phone: label.sender_phone ?? '',
-          courier_name: label.courier_name ?? 'Ekart',
-          courier_service: label.courier_service ?? '',
-          weight: label.weight ?? '',
-          dimensions: label.dimensions ?? '',
-          notes: label.notes ?? '',
-          label_size: label.label_size ?? '100x150',
+        setForm((prev) => ({
+          ...prev,
+          tracking_id: label.tracking_id ?? prev.tracking_id,
+          receiver_name: label.receiver_name ?? prev.receiver_name,
+          address_line1: addrLines[0] ?? prev.address_line1,
+          address_line2: addrLines[1] ?? prev.address_line2,
+          receiver_phone: label.receiver_phone ?? prev.receiver_phone,
+          receiver_city: label.receiver_city ?? prev.receiver_city,
+          receiver_postal_code: label.receiver_postal_code ?? prev.receiver_postal_code,
+          receiver_country: label.receiver_country ?? prev.receiver_country,
+          notes: label.notes ?? prev.notes,
+          label_size: label.label_size ?? prev.label_size,
           label_style: label.label_style ?? 'standard',
-          barcode_type: label.barcode_type ?? 'CODE128',
-          show_second_barcode: label.show_second_barcode ?? true,
-        });
+        }));
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Failed to load label', 'error');
       } finally {
@@ -327,36 +445,46 @@ export function CreatePrnLabel() {
     };
   }, [id, toast]);
 
-  useEffect(() => {
-    if (!id && !savedId && settings) {
-      setForm((prev) => ({
-        ...prev,
-        ...settingsDefaults(settings),
-      }));
-    }
-  }, [settings, id, savedId]);
-
   const size = form.label_size === CUSTOM_LABEL_SIZE_KEY
     ? {
         key: CUSTOM_LABEL_SIZE_KEY,
-        name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm',
+        name: (settings?.customLabelSize?.widthMm ?? 75) + ' x ' + (settings?.customLabelSize?.heightMm ?? 50) + ' mm',
         description: 'Custom',
-        widthMm: settings?.customLabelSize?.widthMm ?? 100,
-        heightMm: settings?.customLabelSize?.heightMm ?? 150,
+        widthMm: settings?.customLabelSize?.widthMm ?? 75,
+        heightMm: settings?.customLabelSize?.heightMm ?? 50,
         layout: 'full',
       }
     : getLabelSize(form.label_size);
 
   const labelSizes = [
+    { key: '75x50', name: '75 x 50 mm (Ekart Pouch 3x2" Landscape)', description: 'Ekart Standard' },
     ...LABEL_SIZES,
-    { key: CUSTOM_LABEL_SIZE_KEY, name: (settings?.customLabelSize?.widthMm ?? 100) + ' x ' + (settings?.customLabelSize?.heightMm ?? 150) + ' mm', description: 'Custom' },
+    { key: CUSTOM_LABEL_SIZE_KEY, name: (settings?.customLabelSize?.widthMm ?? 75) + ' x ' + (settings?.customLabelSize?.heightMm ?? 50) + ' mm', description: 'Custom' },
   ];
 
   const trackingInvalid = form.tracking_id.length > 0 && !supportsValue(form.barcode_type, form.tracking_id);
-  const canSave = form.tracking_id.trim() && form.receiver_name.trim() && (form.address_line1.trim() || form.address_line2.trim()) && !trackingInvalid;
+  const canSave = form.tracking_id.trim() && form.receiver_name.trim() && !trackingInvalid;
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function updateTemplateVar(varKey, value) {
+    setForm((f) => ({
+      ...f,
+      template_vars: {
+        ...(f.template_vars || {}),
+        [varKey]: value,
+      },
+    }));
+  }
+
+  function handleRotateClockwise() {
+    setPreviewRotation((prev) => (prev + 90) % 360);
+  }
+
+  function handleRotateCounterClockwise() {
+    setPreviewRotation((prev) => (prev - 90 + 360) % 360);
   }
 
   function handleQuickPasteChange(e) {
@@ -381,7 +509,7 @@ export function CreatePrnLabel() {
       ...PRESET_RECEIVER,
       quick_address_input: '',
     }));
-    toast('Preset customer details applied!', 'success');
+    toast('Preset details applied!', 'success');
   }
 
   async function handleDownloadPrnZip() {
@@ -415,7 +543,7 @@ export function CreatePrnLabel() {
 
   async function handleSave() {
     if (!canSave) {
-      toast('Please fill in Tracking ID, receiver name, and address.', 'error');
+      toast('Please fill in Tracking ID and receiver name.', 'error');
       return;
     }
     setSaving(true);
@@ -429,13 +557,6 @@ export function CreatePrnLabel() {
         receiver_city: form.receiver_city.trim() || null,
         receiver_postal_code: form.receiver_postal_code.trim() || null,
         receiver_country: form.receiver_country || null,
-        sender_name: form.sender_name.trim() || null,
-        sender_address: form.sender_address.trim() || null,
-        sender_phone: form.sender_phone.trim() || null,
-        courier_name: form.courier_name || null,
-        courier_service: form.courier_service.trim() || null,
-        weight: form.weight.trim() || null,
-        dimensions: form.dimensions.trim() || null,
         notes: form.notes.trim() || null,
         label_size: form.label_size,
         label_style: form.label_style || 'standard',
@@ -464,12 +585,28 @@ export function CreatePrnLabel() {
     }
     setPrinting(true);
     try {
-      const previewHtml = renderPrnLabelHtml(form);
-      const doc = buildPrintDocument(previewHtml, { w: size.widthMm, h: size.heightMm });
-      printHtml(doc);
-      if (savedId) {
-        markPrinted(savedId).catch(() => {});
+      if (form.label_style === 'custom') {
+        const zplCode = compileCustomZpl(form.custom_zpl_template, form);
+        const labelaryUrl = `https://api.labelary.com/v1/printers/8dpmm/labels/3.3x2.3/0/${encodeURIComponent(zplCode)}`;
+        const printDoc = `
+          <html>
+            <head><title>Print Custom Label</title></head>
+            <body style="margin:0; padding:0; display:flex; justify-content:center; align-items:center;">
+              <img src="${labelaryUrl}" style="width:100%; max-width:672px; height:auto;" />
+              <script>window.onload = function(){ window.print(); window.close(); }<\/script>
+            </body>
+          </html>
+        `;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(printDoc);
+        printWindow.document.close();
+      } else {
+        const previewHtml = renderPrnLabelHtml(form);
+        const doc = buildPrintDocument(previewHtml, { w: size.widthMm, h: size.heightMm });
+        printHtml(doc);
       }
+
+      if (savedId) markPrinted(savedId).catch(() => {});
       toast('Sent to printer.', 'success');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Print failed', 'error');
@@ -491,6 +628,7 @@ export function CreatePrnLabel() {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 animate-fade-in">
       <div className="xl:col-span-3 space-y-5">
+        {/* Core Tracking & Format */}
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
             <Hash className="h-4 w-4 text-brand-600" />
@@ -503,7 +641,7 @@ export function CreatePrnLabel() {
                 className={`input font-mono ${trackingInvalid ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : ''}`}
                 value={form.tracking_id}
                 onChange={(e) => update('tracking_id', e.target.value)}
-                placeholder="e.g. FMPC6260775790"
+                placeholder="e.g. FMPP4273763844"
                 autoFocus
               />
             </div>
@@ -518,23 +656,12 @@ export function CreatePrnLabel() {
                 <option value="standard">Style 1: Standard Logistics (Side Barcode)</option>
                 <option value="dual">Style 2: Dual Stacked (Order + Tracking)</option>
                 <option value="bold">Style 3: High Density Express</option>
+                <option value="custom">★ Custom ZPL Model (Ekart / Custom Code)</option>
               </select>
             </div>
 
             <div>
-              <label className="label-text">Barcode Type</label>
-              <select
-                className="input"
-                value={form.barcode_type}
-                onChange={(e) => update('barcode_type', e.target.value)}
-              >
-                <option value="CODE128">Code128 (ZPL Default)</option>
-                <option value="CODE39">Code39</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="label-text">Label Size</label>
+              <label className="label-text">Label Dimensions</label>
               <select
                 className="input"
                 value={form.label_size}
@@ -542,7 +669,7 @@ export function CreatePrnLabel() {
               >
                 {labelSizes.map((s) => (
                   <option key={s.key} value={s.key}>
-                    {s.name} - {s.description}
+                    {s.name}
                   </option>
                 ))}
               </select>
@@ -567,7 +694,107 @@ export function CreatePrnLabel() {
           </div>
         </div>
 
-        {/* Customer Delivery Address & Smart Input */}
+        {/* Dynamic Variables detected from ZPL code */}
+        {form.label_style === 'custom' && detectedVariables.length > 0 && (
+          <div className="card p-5 bg-gradient-to-br from-white to-blue-50/40 border border-blue-200 shadow-sm">
+            <div className="flex items-center justify-between mb-3 border-b border-blue-100 pb-2">
+              <div className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-blue-600" />
+                <h3 className="text-sm font-bold text-slate-900">Dynamic ZPL Template Fields</h3>
+              </div>
+              <span className="text-[11px] font-semibold text-blue-600 bg-blue-100/60 px-2 py-0.5 rounded-full">
+                {detectedVariables.length} dynamic tags active
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4">
+              Fields detected from the <code className="text-blue-700 font-mono text-[11px]">{'${...}'}</code> tags in your ZPL code.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {detectedVariables.map((varKey) => {
+                if (['tid', 'name', 'addr1', 'landmark', 'locality', 'pin', 'state'].includes(varKey)) {
+                  return null;
+                }
+
+                const meta = KNOWN_VARS_META[varKey] || {
+                  label: `\${${varKey}}`,
+                  desc: 'Custom Parameter',
+                };
+
+                const currentValue =
+                  varKey === 'order'
+                    ? form.notes
+                    : form.template_vars?.[varKey] ?? '';
+
+                return (
+                  <div key={varKey} className="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-700">{meta.label}</label>
+                      <code className="text-[10px] text-blue-600 font-mono">{"${" + varKey + "}"}</code>
+                    </div>
+                    <input
+                      type="text"
+                      className="input py-1 text-xs font-mono"
+                      value={currentValue}
+                      onChange={(e) => {
+                        if (varKey === 'order') {
+                          update('notes', e.target.value);
+                        } else {
+                          updateTemplateVar(varKey, e.target.value);
+                        }
+                      }}
+                      placeholder={meta.desc}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Custom ZPL Editor Accordion */}
+        {form.label_style === 'custom' && (
+          <div className="card p-5 border border-slate-300 bg-white">
+            <button
+              type="button"
+              onClick={() => setShowTemplateEditor((s) => !s)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <div className="flex items-center gap-2">
+                <Code2 className="h-4 w-4 text-brand-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-ink-900">Edit Raw ZPL Template Code</h3>
+                  <p className="text-[11px] text-ink-500">Modify coordinates, barcode sizes, or add new dynamic tags</p>
+                </div>
+              </div>
+              <ChevronDown className={`h-4 w-4 text-ink-400 transition-transform ${showTemplateEditor ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showTemplateEditor && (
+              <div className="mt-4 space-y-3">
+                <textarea
+                  rows={13}
+                  className="input font-mono text-xs w-full bg-slate-900 text-emerald-400 border-slate-800 focus:border-brand-500 leading-relaxed"
+                  value={form.custom_zpl_template}
+                  onChange={(e) => update('custom_zpl_template', e.target.value)}
+                />
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => update('custom_zpl_template', DEFAULT_CUSTOM_ZPL_TEMPLATE)}
+                    className="text-brand-600 hover:underline text-[11px]"
+                  >
+                    Reset to Exact Horizontal Ekart Model
+                  </button>
+                  <span className="text-[11px] text-slate-400">203 DPI (8 dpmm) thermal layout</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Customer Delivery Details */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -590,10 +817,10 @@ export function CreatePrnLabel() {
                 <span>Smart Single Input (Paste Address Text Here)</span>
               </div>
               <textarea
-                className="input min-h-[90px] text-xs font-mono bg-white"
+                className="input min-h-[85px] text-xs font-mono bg-white"
                 value={form.quick_address_input}
                 onChange={handleQuickPasteChange}
-                placeholder={`Paste multi-line raw address here, e.g.:\nAzaa\nNambili Parambath House\nKoyamon Road, Near Kathib Masjid\nMALAPPURAM\nKerala\n676306`}
+                placeholder={`Paste multi-line raw address here, e.g.:\nNasrin K\nKuruniyan saw millOthukkungal\nafter the transformer, Nottanalakkal\nMALAPPURAM\nKerala\n676528`}
               />
             </div>
 
@@ -604,7 +831,7 @@ export function CreatePrnLabel() {
                   className="input"
                   value={form.receiver_name}
                   onChange={(e) => update('receiver_name', e.target.value)}
-                  placeholder="Enter customer name or company"
+                  placeholder="Customer name"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -617,7 +844,7 @@ export function CreatePrnLabel() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="label-text">Address Line 2</label>
+                <label className="label-text">Address Line 2 / Landmark</label>
                 <input
                   className="input"
                   value={form.address_line2}
@@ -635,12 +862,12 @@ export function CreatePrnLabel() {
                 />
               </div>
               <div>
-                <label className="label-text">PIN Code / Postal Code</label>
+                <label className="label-text">PIN Code</label>
                 <input
                   className="input"
                   value={form.receiver_postal_code}
                   onChange={(e) => update('receiver_postal_code', e.target.value)}
-                  placeholder="e.g. 676505"
+                  placeholder="e.g. 676528"
                 />
               </div>
               <div>
@@ -668,6 +895,7 @@ export function CreatePrnLabel() {
           </div>
         </div>
 
+        {/* Courier & Order Notes */}
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-4">
             <Truck className="h-4 w-4 text-brand-600" />
@@ -707,54 +935,8 @@ export function CreatePrnLabel() {
           </div>
         </div>
 
-        <div className="card p-5">
-          <button
-            onClick={() => setShowAdvanced((s) => !s)}
-            className="flex items-center justify-between w-full text-left"
-          >
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4 text-brand-600" />
-              <h3 className="text-sm font-bold text-ink-900">Sender Details</h3>
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 text-ink-400 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {showAdvanced && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 animate-fade-in">
-              <div>
-                <label className="label-text">Sender Name</label>
-                <input
-                  className="input"
-                  value={form.sender_name}
-                  onChange={(e) => update('sender_name', e.target.value)}
-                  placeholder="Sender name"
-                />
-              </div>
-              <div>
-                <label className="label-text">Sender Phone</label>
-                <input
-                  className="input"
-                  value={form.sender_phone}
-                  onChange={(e) => update('sender_phone', e.target.value)}
-                  placeholder="Sender phone"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="label-text">Sender Address</label>
-                <textarea
-                  className="input min-h-[60px] resize-y"
-                  value={form.sender_address}
-                  onChange={(e) => update('sender_address', e.target.value)}
-                  placeholder="Sender address"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Action Controls */}
-        <div className="card p-4 flex flex-wrap items-center gap-2 sticky bottom-4">
+        <div className="card p-4 flex flex-wrap items-center gap-2 sticky bottom-4 shadow-lg bg-white z-20">
           <button onClick={handleSave} disabled={saving || !canSave} className="btn-primary">
             <Save className="h-4 w-4" />
             {saving ? 'Saving…' : savedId ? 'Update Label' : 'Save Label'}
@@ -781,17 +963,44 @@ export function CreatePrnLabel() {
         </div>
       </div>
 
-      {/* Live Label Preview */}
+      {/* Live Label Preview with Rotation Controls */}
       <div className="xl:col-span-2">
         <div className="xl:sticky xl:top-4">
           <div className="card p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-ink-900">Customer Label Preview</h3>
-              <span className="text-xs text-ink-500">{size.name}</span>
+              <div>
+                <h3 className="text-sm font-bold text-ink-900">Customer Label Preview</h3>
+                <span className="text-xs text-ink-500 font-mono">
+                  {form.label_style === 'custom' ? 'Ekart Custom ZPL' : size.name}
+                </span>
+              </div>
+
+              {/* Quick Rotation Buttons */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={handleRotateCounterClockwise}
+                  title="Rotate 90° CCW"
+                  className="p-1 rounded text-slate-600 hover:text-slate-900 hover:bg-white transition shadow-sm"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[10px] font-mono font-bold text-slate-500 px-1">
+                  {previewRotation}°
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRotateClockwise}
+                  title="Rotate 90° CW"
+                  className="p-1 rounded text-slate-600 hover:text-slate-900 hover:bg-white transition shadow-sm"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex justify-center items-start bg-ink-100 rounded-lg p-3 overflow-hidden min-h-[350px] w-full">
-              <PrnLabelPreview form={form} />
+            <div className="flex justify-center items-center bg-ink-100 rounded-lg p-3 overflow-hidden min-h-[400px] w-full">
+              <PrnLabelPreview form={form} rotation={previewRotation} />
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-center">
@@ -803,7 +1012,7 @@ export function CreatePrnLabel() {
               <MiniStat 
                 icon={Hash} 
                 label="Type" 
-                value={form.barcode_type || 'CODE128'} 
+                value={form.label_style === 'custom' ? 'ZPL II / PRN' : form.barcode_type || 'CODE128'} 
               />
             </div>
           </div>
@@ -813,18 +1022,21 @@ export function CreatePrnLabel() {
   );
 }
 
-/* Dynamic PRN Preview Component supporting multiple layout styles */
-export function PrnLabelPreview({ form }) {
+/* Full Visual Preview supporting Standard SVG and Custom ZPL with rotation */
+export function PrnLabelPreview({ form, rotation = 0 }) {
   const primaryBarcodeSvgRef = useRef(null);
   const secondaryBarcodeSvgRef = useRef(null);
   const orderBarcodeSvgRef = useRef(null);
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);
+  const [zplImgUrl, setZplImgUrl] = useState('');
+  const [renderingZpl, setRenderingZpl] = useState(false);
 
   const style = form?.label_style || 'standard';
 
+  // Responsive Scaling for Standard SVG Layout[cite: 5]
   useEffect(() => {
-    if (!wrapperRef.current) return;
+    if (!wrapperRef.current || style === 'custom') return;
 
     const updateScale = () => {
       if (!wrapperRef.current) return;
@@ -843,11 +1055,11 @@ export function PrnLabelPreview({ form }) {
     updateScale();
 
     return () => observer.disconnect();
-  }, []);
+  }, [style]);
 
-  // Primary Barcode
+  // Primary Barcode SVG generation[cite: 5]
   useEffect(() => {
-    if (primaryBarcodeSvgRef.current && form?.tracking_id) {
+    if (primaryBarcodeSvgRef.current && form?.tracking_id && style !== 'custom') {
       try {
         JsBarcode(primaryBarcodeSvgRef.current, sanitizeForCode39(form.tracking_id), {
           format: form.barcode_type === 'CODE39' ? 'CODE39' : 'CODE128',
@@ -865,7 +1077,7 @@ export function PrnLabelPreview({ form }) {
     }
   }, [form?.tracking_id, form?.barcode_type, style]);
 
-  // Secondary Backup Barcode
+  // Secondary Backup Barcode SVG generation[cite: 5]
   useEffect(() => {
     const backupValue = form?.notes || form?.tracking_id;
     if (secondaryBarcodeSvgRef.current && form?.show_second_barcode && backupValue && style === 'standard') {
@@ -886,7 +1098,7 @@ export function PrnLabelPreview({ form }) {
     }
   }, [form?.notes, form?.tracking_id, form?.barcode_type, form?.show_second_barcode, style]);
 
-  // Order Barcode
+  // Order Barcode SVG generation[cite: 5]
   useEffect(() => {
     if (orderBarcodeSvgRef.current && form?.notes && style === 'dual') {
       try {
@@ -906,11 +1118,88 @@ export function PrnLabelPreview({ form }) {
     }
   }, [form?.notes, style]);
 
+  // Labelary live renderer: 3.3x2.3 inches (Horizontal Landscape)
+  useEffect(() => {
+    if (style !== 'custom') return;
+
+    let active = true;
+    const timer = setTimeout(() => {
+      setRenderingZpl(true);
+      const zplCode = compileCustomZpl(form?.custom_zpl_template, form);
+      // Landscape 672x468 dots = 3.3x2.3 inches at 8dpmm
+      const url = `https://api.labelary.com/v1/printers/8dpmm/labels/3.3x2.3/0/${encodeURIComponent(zplCode)}`;
+
+      const img = new Image();
+      img.src = url;
+      img.onload = () => {
+        if (active) {
+          setZplImgUrl(url);
+          setRenderingZpl(false);
+        }
+      };
+      img.onerror = () => {
+        if (active) setRenderingZpl(false);
+      };
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [
+    style,
+    form?.custom_zpl_template,
+    form?.tracking_id,
+    form?.notes,
+    form?.receiver_name,
+    form?.address_line1,
+    form?.address_line2,
+    form?.receiver_city,
+    form?.receiver_postal_code,
+    form?.template_vars,
+  ]);
+
+  // 1. CUSTOM ZPL PREVIEW (Horizontal Landscape with Rotation)
+  if (style === 'custom') {
+    return (
+      <div className="w-full flex flex-col items-center justify-center p-2 relative overflow-hidden min-h-[360px]">
+        {renderingZpl && (
+          <div className="absolute top-2 right-2 bg-slate-900/80 text-white text-[10px] px-2 py-0.5 rounded flex items-center gap-1 shadow z-10">
+            <RefreshCw className="w-3 h-3 animate-spin" /> Rendering...
+          </div>
+        )}
+        {zplImgUrl ? (
+          <div
+            className="flex items-center justify-center transition-transform duration-300 ease-out"
+            style={{
+              transform: `rotate(${rotation}deg)`,
+            }}
+          >
+            <img
+              src={zplImgUrl}
+              alt="Ekart Custom Horizontal ZPL Preview"
+              className="max-h-[380px] max-w-[480px] object-contain bg-white rounded-lg shadow-md border border-slate-300"
+            />
+          </div>
+        ) : (
+          <div className="h-64 flex items-center justify-center text-xs text-slate-400">
+            Generating live ZPL preview...
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 2. STANDARD SVG PREVIEW (Horizontal Landscape with Rotation)[cite: 5]
   const nativeWidth = 669;
   const nativeHeight = 467;
 
   return (
-    <div ref={wrapperRef} className="w-full flex justify-center items-start overflow-hidden">
+    <div
+      ref={wrapperRef}
+      className="w-full flex justify-center items-center overflow-hidden transition-transform duration-300"
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
       <div
         style={{
           width: `${nativeWidth}px`,
@@ -965,7 +1254,7 @@ export function PrnLabelPreview({ form }) {
 
         {style === 'bold' && (
           <div style={{ width: '100%', height: '100%', border: '4px solid #000', padding: '12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div style={{ background: '#000', color: '#fff', padding: '8px 12px', margin: '-12px -12px 8px -12px', display: 'flex', justify: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: '#000', color: '#fff', padding: '8px 12px', margin: '-12px -12px 8px -12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: '900', fontSize: '20px' }}>{(form?.courier_name || 'COURIER').toUpperCase()}</span>
             </div>
 
@@ -1003,7 +1292,7 @@ export function PrnLabelPreview({ form }) {
               </div>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', justify: 'space-between', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '10px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #000000', paddingBottom: '8px', marginBottom: '10px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ backgroundColor: '#000000', color: '#ffffff', padding: '5px', borderRadius: '6px' }}>
                   <PackageCheck className="h-5 w-5 stroke-[2.5]" />
@@ -1036,7 +1325,7 @@ export function PrnLabelPreview({ form }) {
               <span style={{ fontSize: '15px', fontWeight: '700' }}>ORDER ID: {form?.notes || '-'}</span>
             </div>
 
-            <div style={{ display: 'flex', itemsCenter: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '8px', paddingRight: form?.show_second_barcode ? '100px' : '0px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '2px' }}>
                   <Barcode className="h-3.5 w-3.5" />
@@ -1068,28 +1357,25 @@ function MiniStat({ icon: Icon, label, value }) {
 function settingsDefaults(settings) {
   if (!settings) return {};
   return {
-    label_size: settings.defaultLabelSize || '100x150',
+    label_size: settings.defaultLabelSize || '75x50',
     courier_name: settings.defaultCourier || 'Ekart',
     barcode_type: settings.barcode?.type || 'CODE128',
     receiver_country: 'India',
   };
 }
 
-/* Renders HTML String for Direct Print Engine (Print-Forced High Contrast Pure SVGs) */
 function renderPrnLabelHtml(form) {
   const style = form?.label_style || 'standard';
   const addressLines = [form?.address_line1, form?.address_line2].filter(Boolean);
-  
-  // Barcode graphics
+
   const primaryBarcodeSvg = generateBarcodeSvgString(form?.tracking_id, form?.barcode_type, style === 'bold' ? 80 : 65, false, style === 'bold' ? 2.5 : 2.2);
   const backupValue = form?.notes || form?.tracking_id;
-  
-  const secondaryBarcodeSvg = form?.show_second_barcode && backupValue 
+
+  const secondaryBarcodeSvg = form?.show_second_barcode && backupValue
     ? generateBarcodeSvgString(backupValue, form?.barcode_type, 40, false, 1.8)
     : '';
   const orderBarcodeSvg = form?.notes ? generateBarcodeSvgString(form.notes, 'CODE128', 35, false, 1.5) : '';
 
-  // Embedded Printer-Safe Vector Icons (Forced Black/White contrast)
   const iconPackageCheck = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg>`;
   const iconTruck = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
   const iconMapPin = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;

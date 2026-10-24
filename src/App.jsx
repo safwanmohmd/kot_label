@@ -1,55 +1,45 @@
+import React from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell.jsx';
 import { ToastProvider } from './lib/useToast.jsx';
-import { Dashboard } from './pages/Dashboard.jsx';
-import { CreateLabel } from './pages/CreateLabel.jsx';
-import { BulkBarcodes } from './pages/BulkBarcodes.jsx';
-import { LabelHistory } from './pages/LabelHistory.jsx';
-import { Settings } from './pages/Settings.jsx';
-import { UnmaskTrackingIds } from './pages/UnmaskTrackingIds.jsx';
-
-import { LpTrackerList } from './pages/LpTrackerList.jsx';
-import { ManualDeliveryTracker } from './pages/ManualDeliveryTracker.jsx';
-import { WishmasterVendorManager } from './pages/WishmasterVendorManager.jsx';
-import { WmLossEmailGenerator } from './pages/WmLossEmailGenerator.jsx';
-import { CreatePrnLabel } from './pages/CreatePrnLabel.jsx';
-import { EodReportGenerator } from './pages/EodReportGenerator.jsx';
-import { WishmasterReturnVerification } from './pages/ReturnVerification.jsx';
-import { TrackingSorter } from './pages/TrackingSorter.jsx';
-import { DriveLinksManager } from './pages/DriveLinksManager.jsx';
-import BagSessionManager from './pages/BagSessionManager.jsx';
-import BulkTrackingSearch from './pages/BulkTrackingSearch.jsx';
-import KotAutomationConsoleGenerator from './pages/KotAutomationConsoleGenerator.jsx';
-
+import { AuthProvider } from './context/AuthContext.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AdminUserManager from './pages/AdminUserManager.jsx';
+import { APP_ROUTES } from './config/routes.js';
 
 function App() {
   return (
     <ToastProvider>
-      <BrowserRouter>
-        <AppShell>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/create" element={<CreateLabel />} />
-            <Route path="/create-prn" element={<CreatePrnLabel />} />
-            <Route path="/create/:id" element={<CreateLabel />} />
-            <Route path="/bulk" element={<BulkBarcodes />} />
-            <Route path="/unmask" element={<UnmaskTrackingIds />} />
-            <Route path="/lp" element={<LpTrackerList />} />
-            <Route path="/eod" element={<EodReportGenerator />} />
-            <Route path="/vendors" element={<WishmasterVendorManager />} />
-            <Route path="/history" element={<LabelHistory />} />
-            <Route path="/lossgen" element={<WmLossEmailGenerator />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/manualdelivery" element={<ManualDeliveryTracker />} />
-            <Route path="/verifytid" element={<WishmasterReturnVerification />} />
-            <Route path="/sort" element={<TrackingSorter />} />
-            <Route path="/gdrive" element={<DriveLinksManager />} />
-            <Route path="/bags" element={<BagSessionManager />} />
-            <Route path="/search" element={<BulkTrackingSearch />} />
-            <Route path="/chromebook" element={<KotAutomationConsoleGenerator />} />
-          </Routes>
-        </AppShell>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppShell>
+            <Routes>
+              {/* Dynamically build all application routes from the config */}
+              {APP_ROUTES.map(({ id, path, component: Component, inherits }) => (
+                <Route
+                  key={id}
+                  path={path}
+                  element={
+                    <ProtectedRoute permissionKey={inherits || id}>
+                      <Component />
+                    </ProtectedRoute>
+                  }
+                />
+              ))}
+
+              {/* Dedicated Admin Page */}
+              <Route
+                path="/admin/users"
+                element={
+                  <ProtectedRoute>
+                    <AdminUserManager />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AppShell>
+        </BrowserRouter>
+      </AuthProvider>
     </ToastProvider>
   );
 }
