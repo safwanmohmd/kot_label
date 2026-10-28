@@ -41,7 +41,7 @@ const SIDEBAR_SECTIONS = [
   {
     category: 'TRACKING & INSPECTION',
     items: [
-      { id: 'bags', label: 'Bag Dispatch Hub', path: '/bags', icon: Briefcase },
+      { id: 'bags', label: 'PRE ALERT', path: '/bags', icon: Briefcase },
       { id: 'search', label: 'Shipment Auditor', path: '/search', icon: Search },
       { id: 'eod', label: 'EOD Report', path: '/eod', icon: FileSpreadsheet },
       { id: 'verifytid', label: 'Return Verification', path: '/verifytid', icon: CheckCircle },

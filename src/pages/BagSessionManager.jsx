@@ -26,7 +26,7 @@ export default function BagSessionManager() {
     [toastHook]
   );
 
-  // Helper: Format YYYY-MM-DD to DD/MM/YYYY (e.g. 28/10/2026)
+  // Helper: Format YYYY-MM-DD to DD/MM/YYYY (e.g. 28/10/2026)[cite: 8]
   const formatToDisplayDate = (dateStr) => {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
@@ -36,28 +36,30 @@ export default function BagSessionManager() {
     return dateStr;
   };
 
-  // Tabs: 'dashboard' | 'sessions' | 'global_search'
+  const todayIso = new Date().toISOString().split('T')[0];
+
+  // Tabs: 'dashboard' | 'sessions' | 'global_search'[cite: 8]
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Sessions & Active Data
+  // Sessions & Active Data[cite: 8]
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [sessionDetails, setSessionDetails] = useState(null);
   const [selectedBgGroup, setSelectedBgGroup] = useState(null);
 
-  // Expanded session cards tracking for "Show More"
+  // Expanded session cards tracking for "Show More"[cite: 8]
   const [expandedSessions, setExpandedSessions] = useState({});
 
-  // Modals
+  // Modals[cite: 8]
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [targetBgForImport, setTargetBgForImport] = useState(null);
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [mailSessionTarget, setMailSessionTarget] = useState(null);
 
-  // Manual Single Bag Creator Modal State
+  // Manual Single Bag Creator Modal State[cite: 8]
   const [manualBagForm, setManualBagForm] = useState({
     bg_tracking_id: '',
     bag_type: 'tro',
@@ -65,7 +67,7 @@ export default function BagSessionManager() {
   });
   const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
 
-  // Reusable Confirmation & Password Auth Modal State
+  // Reusable Confirmation & Password Auth Modal State[cite: 8]
   const [confirmModalState, setConfirmModalState] = useState({
     isOpen: false,
     title: '',
@@ -78,15 +80,15 @@ export default function BagSessionManager() {
     onConfirm: null,
   });
 
-  // Bag Type State ('tro' | 'missroute' | 'tote')
+  // Bag Type State ('tro' | 'missroute' | 'tote')[cite: 8]
   const [selectedBagType, setSelectedBagType] = useState('tro');
 
-  // Quick single item scanning inside inspector modal
+  // Quick single item scanning inside inspector modal[cite: 8]
   const [modalSingleTrackingInput, setModalSingleTrackingInput] = useState('');
 
-  // Form Fields
+  // Form Fields[cite: 8]
   const [sessionForm, setSessionForm] = useState({
-    session_date: new Date().toISOString().split('T')[0],
+    session_date: todayIso,
     title: '',
     status: 'open',
     notes: '',
@@ -94,11 +96,11 @@ export default function BagSessionManager() {
 
   const [rawBulkData, setRawBulkData] = useState('');
 
-  // Mail Modal Configuration Fields
+  // Mail Modal Configuration Fields[cite: 8]
   const [mailSentFrom, setMailSentFrom] = useState('ElasticRunKottakkalODH_KOT');
   const [mailSentTo, setMailSentTo] = useState('MH CJB');
 
-  // Dashboard Filters & Pagination
+  // Dashboard Filters & Pagination[cite: 8]
   const [dashboardFilterDate, setDashboardFilterDate] = useState('');
   const [dashboardFilterStatus, setDashboardFilterStatus] = useState('all');
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
@@ -107,7 +109,7 @@ export default function BagSessionManager() {
   const [sessionPage, setSessionPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Global Lookup State
+  // Global Lookup State[cite: 8]
   const [globalQuery, setGlobalQuery] = useState('');
   const [globalSearchType, setGlobalSearchType] = useState('bg_tracking_id');
   const [globalResults, setGlobalResults] = useState([]);
@@ -122,7 +124,6 @@ export default function BagSessionManager() {
     }));
   };
 
-  // Helper: Trigger Confirmation or Password Modal
   const openConfirmModal = ({
     title,
     description,
@@ -144,7 +145,6 @@ export default function BagSessionManager() {
     });
   };
 
-  // Helper: Execute action checking if session is closed
   const requireAuthIfClosed = (sessionObj, title, description, actionCallback) => {
     const isClosed = sessionObj?.status === 'completed' || sessionObj?.status === 'closed';
     if (!isClosed) {
@@ -192,7 +192,6 @@ export default function BagSessionManager() {
     }
   };
 
-  // Helper: Group items by unique bg_tracking_id
   const groupItemsByBgTrackingId = (items = []) => {
     const map = {};
     items.forEach((item) => {
@@ -213,7 +212,6 @@ export default function BagSessionManager() {
     return Object.values(map);
   };
 
-  // 1. Fetch Sessions
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
@@ -313,7 +311,6 @@ export default function BagSessionManager() {
     setActiveTab('sessions');
   };
 
-  // 2. Smart Parser
   const parseRawLogisticsData = (text, fallbackBgId = '') => {
     let raw = text.trim();
     const parsed = [];
@@ -376,11 +373,7 @@ export default function BagSessionManager() {
     return { parsed, duplicatesInPayload: Array.from(duplicatesInPayload) };
   };
 
-  // 3. Create Session
-  const handleCreateSession = async (e) => {
-    e.preventDefault();
-    if (!sessionForm.session_date) return;
-
+  const executeCreateSession = async () => {
     setSubmitting(true);
     try {
       const title = sessionForm.title.trim() || `Session - ${formatToDisplayDate(sessionForm.session_date)}`;
@@ -401,7 +394,7 @@ export default function BagSessionManager() {
 
       showToast(`Session "${title}" created!`, 'success');
       setSessionForm({
-        session_date: new Date().toISOString().split('T')[0],
+        session_date: todayIso,
         title: '',
         status: 'open',
         notes: '',
@@ -416,7 +409,37 @@ export default function BagSessionManager() {
     }
   };
 
-  // 4. Toggle Session Status
+  // Warning check when creating duplicate/multiple sessions for today or a chosen date
+  const handleCreateSession = (e) => {
+    e.preventDefault();
+    if (!sessionForm.session_date) return;
+
+    const existingSameDateSessions = sessions.filter(
+      (s) => s.session_date === sessionForm.session_date
+    );
+
+    if (existingSameDateSessions.length > 0) {
+      const hasOpenSession = existingSameDateSessions.some(
+        (s) => s.status === 'open' || s.status === 'active'
+      );
+      const formattedDate = formatToDisplayDate(sessionForm.session_date);
+
+      openConfirmModal({
+        title: '⚠️ Multiple Sessions Warning',
+        description: hasOpenSession
+          ? `Notice: A session for ${formattedDate} is ALREADY OPEN. Do you need to create another one?`
+          : `Notice: A session for ${formattedDate} already exists. Do you need to create another one?`,
+        isPasswordRequired: false,
+        confirmButtonText: 'Yes, Create Another Session',
+        confirmButtonColor: 'bg-amber-600 hover:bg-amber-700',
+        onConfirm: executeCreateSession,
+      });
+      return;
+    }
+
+    executeCreateSession();
+  };
+
   const handleToggleSessionStatus = async (sessionId, currentStatus) => {
     const isClosed = currentStatus === 'completed' || currentStatus === 'closed';
 
@@ -466,7 +489,6 @@ export default function BagSessionManager() {
     }
   };
 
-  // 5. Bulk Import
   const handleBulkImport = async (e) => {
     e?.preventDefault();
     if (!sessionDetails) {
@@ -594,7 +616,6 @@ export default function BagSessionManager() {
     );
   };
 
-  // 6. Manual Add Single Bag / Tote
   const handleCreateManualBag = async (e) => {
     e.preventDefault();
     if (!sessionDetails) {
@@ -702,7 +723,6 @@ export default function BagSessionManager() {
     );
   };
 
-  // 7. Single Tracking Item Add inside Inspector
   const handleAddTrackingToCurrentBg = async () => {
     const val = modalSingleTrackingInput.trim();
     if (!val || !selectedBgGroup) return;
@@ -769,7 +789,6 @@ export default function BagSessionManager() {
     );
   };
 
-  // 8. Delete Handlers
   const handleDeleteSessionPrompt = (sessionId, sessionTitle) => {
     const performDelete = async () => {
       try {
@@ -875,7 +894,6 @@ export default function BagSessionManager() {
     });
   };
 
-  // 9. Global Search
   const handleGlobalSearch = async (e) => {
     e?.preventDefault();
     if (!globalQuery.trim()) return;
@@ -915,14 +933,13 @@ export default function BagSessionManager() {
     }
   };
 
-  // 10. Stats & Filters
   const stats = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
     let totalSessions = sessions.length;
     let totalBgs = 0;
     let totalTrackingIds = 0;
     let todayBgs = 0;
     let todayTrackingIds = 0;
+    let todaySessionCount = 0;
     let openCount = 0;
     let closedCount = 0;
 
@@ -934,7 +951,8 @@ export default function BagSessionManager() {
       totalBgs += s.totalUniqueBgs || 0;
       totalTrackingIds += s.totalPackets || 0;
 
-      if (s.session_date === todayStr) {
+      if (s.session_date === todayIso) {
+        todaySessionCount++;
         todayBgs += s.totalUniqueBgs || 0;
         todayTrackingIds += s.totalPackets || 0;
       }
@@ -946,44 +964,51 @@ export default function BagSessionManager() {
       totalSessions,
       totalBgs,
       totalTrackingIds,
+      todaySessionCount,
       todayBags: todayBgs,
       todayTrackingIds,
       openCount,
       closedCount,
       avgPerBag,
     };
-  }, [sessions]);
+  }, [sessions, todayIso]);
 
   const filteredSessions = useMemo(() => {
-    return sessions.map((s) => {
-      const sortedGroups = [...(s.bgGroups || [])].sort((a, b) => {
-        if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
-        if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
-        return 0;
+    return sessions
+      .map((s) => {
+        const sortedGroups = [...(s.bgGroups || [])].sort((a, b) => {
+          if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
+          if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
+          return 0;
+        });
+        return { ...s, bgGroups: sortedGroups };
+      })
+      .filter((s) => {
+        const matchesDate = dashboardFilterDate ? s.session_date === dashboardFilterDate : true;
+        
+        let matchesStatus = true;
+        if (dashboardFilterStatus === 'open') {
+          matchesStatus = s.status === 'open' || s.status === 'active';
+        } else if (dashboardFilterStatus === 'completed') {
+          matchesStatus = s.status === 'completed' || s.status === 'closed';
+        } else if (dashboardFilterStatus === 'today') {
+          matchesStatus = s.session_date === todayIso;
+        }
+
+        const matchesSearch = sessionSearchTerm
+          ? s.title?.toLowerCase().includes(sessionSearchTerm.toLowerCase()) ||
+            s.bgGroups?.some((b) => b.bg_tracking_id?.toLowerCase().includes(sessionSearchTerm.toLowerCase()))
+          : true;
+
+        return matchesDate && matchesStatus && matchesSearch;
       });
-      return { ...s, bgGroups: sortedGroups };
-    }).filter((s) => {
-      const matchesDate = dashboardFilterDate ? s.session_date === dashboardFilterDate : true;
-      const matchesStatus =
-        dashboardFilterStatus === 'all'
-          ? true
-          : dashboardFilterStatus === 'open'
-          ? s.status === 'open'
-          : s.status === 'completed' || s.status === 'closed';
-      const matchesSearch = sessionSearchTerm
-        ? s.title?.toLowerCase().includes(sessionSearchTerm.toLowerCase()) ||
-          s.bgGroups?.some((b) => b.bg_tracking_id?.toLowerCase().includes(sessionSearchTerm.toLowerCase()))
-        : true;
-      return matchesDate && matchesStatus && matchesSearch;
-    });
-  }, [sessions, dashboardFilterDate, dashboardFilterStatus, sessionSearchTerm]);
+  }, [sessions, dashboardFilterDate, dashboardFilterStatus, sessionSearchTerm, todayIso]);
 
   const paginatedSessions = useMemo(() => {
     const start = (sessionPage - 1) * itemsPerPage;
     return filteredSessions.slice(start, start + itemsPerPage);
   }, [filteredSessions, sessionPage]);
 
-  // Session Workspace filtered and always sorted with Missroute bags at the bottom
   const filteredWorkspaceBgs = useMemo(() => {
     if (!sessionDetails?.bgGroups) return [];
     return sessionDetails.bgGroups
@@ -1002,7 +1027,6 @@ export default function BagSessionManager() {
       });
   }, [sessionDetails, workspaceBgSearch, workspaceBagTypeFilter]);
 
-  // 11. Copy Rich Mailable HTML & Text Format to Clipboard
   const copyFormattedMail = () => {
     if (!emailTableRef.current) return;
 
@@ -1066,7 +1090,7 @@ export default function BagSessionManager() {
               Logistics Dispatch Hub
             </h1>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Unique BG Tracking ID management, TRO, Missroute & Tote categorization, and mailable dispatch reports.
+              Unique BG Tracking ID management, TRO, Missroute & Tote categorization, and mailable dispatch reports[cite: 8].
             </p>
           </div>
         </div>
@@ -1103,6 +1127,7 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
+          {/* Top Key Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
@@ -1119,15 +1144,15 @@ export default function BagSessionManager() {
               <p className="text-lg font-black text-emerald-600 mt-0.5">{stats.totalTrackingIds}</p>
               <span className="text-[9px] text-indigo-500 font-semibold">Active Parcels</span>
             </div>
-            <div className="bg-gradient-to-br from-indigo-50 to-white p-3 rounded-lg border border-indigo-100 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase text-indigo-600">Today's Bags/Totes</span>
-              <p className="text-lg font-black text-indigo-900 mt-0.5">{stats.todayBags}</p>
-              <span className="text-[9px] text-indigo-400 font-medium">Daily Outward</span>
+            <div className="bg-gradient-to-br from-indigo-50 to-white p-3 rounded-lg border border-indigo-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-indigo-700">Today's Sessions</span>
+              <p className="text-lg font-black text-indigo-900 mt-0.5">{stats.todaySessionCount}</p>
+              <span className="text-[9px] text-indigo-600 font-medium">{stats.todayBags} Bags active</span>
             </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-white p-3 rounded-lg border border-emerald-100 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase text-emerald-600">Today's Shipments</span>
+            <div className="bg-gradient-to-br from-emerald-50 to-white p-3 rounded-lg border border-emerald-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-emerald-700">Today's Shipments</span>
               <p className="text-lg font-black text-emerald-900 mt-0.5">{stats.todayTrackingIds}</p>
-              <span className="text-[9px] text-emerald-500 font-medium">Dispatched Today</span>
+              <span className="text-[9px] text-emerald-600 font-medium">Dispatched Today</span>
             </div>
             <div className="bg-gradient-to-br from-gray-50 to-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-500">Closed Shifts</span>
@@ -1136,6 +1161,7 @@ export default function BagSessionManager() {
             </div>
           </div>
 
+          {/* Filter Bar */}
           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-2 items-center">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <input
@@ -1159,6 +1185,17 @@ export default function BagSessionManager() {
                   }`}
                 >
                   All ({stats.totalSessions})
+                </button>
+                <button
+                  onClick={() => {
+                    setDashboardFilterStatus('today');
+                    setSessionPage(1);
+                  }}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                    dashboardFilterStatus === 'today' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700'
+                  }`}
+                >
+                  Today ({stats.todaySessionCount})
                 </button>
                 <button
                   onClick={() => {
@@ -1214,6 +1251,7 @@ export default function BagSessionManager() {
             </div>
           </div>
 
+          {/* Sessions List with Blinking Highlight Borders on Session Boxes */}
           <div className="space-y-3">
             {loading ? (
               <div className="p-8 text-center text-xs text-gray-400 bg-white rounded-lg border">
@@ -1226,26 +1264,49 @@ export default function BagSessionManager() {
             ) : (
               paginatedSessions.map((session) => {
                 const isClosed = session.status === 'completed' || session.status === 'closed';
+                const isToday = session.session_date === todayIso;
                 const isExpanded = !!expandedSessions[session.id];
                 const bgList = session.bgGroups || [];
+
+                // Visual styling: Pulsing/blinking border for today's open session, steady green for other open sessions
+                let borderBoxClasses = 'bg-white border-gray-200 shadow-2xs hover:border-gray-300';
+                if (isToday && !isClosed) {
+                  borderBoxClasses = 'bg-white border-2 border-indigo-600 shadow-md ring-2 ring-indigo-400/50 animate-pulse';
+                } else if (!isClosed) {
+                  borderBoxClasses = 'bg-white border-2 border-emerald-500 shadow-sm';
+                } else if (isClosed) {
+                  borderBoxClasses = 'bg-gray-50/70 border-gray-300 opacity-70 grayscale-20 hover:opacity-90';
+                }
 
                 return (
                   <div
                     key={session.id}
-                    className={`rounded-lg border transition-all overflow-hidden ${
-                      isClosed
-                        ? 'bg-gray-50/70 border-gray-300 opacity-65 grayscale-25 hover:opacity-90'
-                        : 'bg-white border-gray-200 shadow-2xs hover:border-gray-300'
-                    }`}
+                    className={`rounded-lg border transition-all overflow-hidden relative ${borderBoxClasses}`}
                   >
-                    <div className="px-3 py-2 bg-gray-50/90 border-b flex flex-wrap justify-between items-center gap-2">
+                    <div
+                      className={`px-3 py-2 border-b flex flex-wrap justify-between items-center gap-2 ${
+                        isToday && !isClosed ? 'bg-indigo-50/70' : isClosed ? 'bg-gray-100/80' : 'bg-gray-50/90'
+                      }`}
+                    >
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          {isClosed && (
-                            <span className="text-[9px] bg-gray-600 text-white px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Live blinking status dot for active shifts */}
+                          {isToday && !isClosed ? (
+                            <span className="flex items-center gap-1 bg-indigo-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                              TODAY LIVE
+                            </span>
+                          ) : !isClosed ? (
+                            <span className="flex items-center gap-1 bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              OPEN
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-gray-600 text-white px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
                               🔒 Closed
                             </span>
                           )}
+
                           <span className="font-bold text-gray-900 text-xs">{session.title}</span>
                           <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-gray-700">
                             {formatToDisplayDate(session.session_date)}
@@ -1674,7 +1735,7 @@ export default function BagSessionManager() {
             <div>
               <h2 className="text-xs font-bold text-gray-900">Global Historical Search</h2>
               <p className="text-[11px] text-gray-500">
-                Query across all past sessions to locate specific Bag/Tote IDs, bag types, or parcel tracking codes.
+                Query across all past sessions to locate specific Bag/Tote IDs, bag types, or parcel tracking codes[cite: 8].
               </p>
             </div>
 
@@ -1795,6 +1856,18 @@ export default function BagSessionManager() {
                 />
               </div>
 
+              {(() => {
+                const existingCount = sessions.filter((s) => s.session_date === sessionForm.session_date).length;
+                if (existingCount > 0) {
+                  return (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-800 leading-tight">
+                      ℹ️ Note: <b>{existingCount} session(s)</b> already exist for {formatToDisplayDate(sessionForm.session_date)}. Submitting will ask for confirmation.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div>
                 <label className="block text-[11px] font-semibold text-gray-700">Shift Name</label>
                 <input
@@ -1819,7 +1892,7 @@ export default function BagSessionManager() {
                   disabled={submitting}
                   className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded shadow-2xs disabled:opacity-50"
                 >
-                  {submitting ? 'Creating...' : 'Create'}
+                  {submitting ? 'Creating...' : 'Create Session'}
                 </button>
               </div>
             </form>
@@ -1827,7 +1900,7 @@ export default function BagSessionManager() {
         </div>
       )}
 
-      {/* MODAL 2: BULK IMPORT (WITH TOTE TYPE) */}
+      {/* MODAL 2: BULK IMPORT */}
       {isBulkImporting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-4 space-y-3">
@@ -1901,9 +1974,6 @@ export default function BagSessionManager() {
                   className="mt-0.5 w-full text-[11px] font-mono border rounded p-2 focus:border-indigo-500 focus:outline-none"
                   required
                 />
-                <p className="text-[10px] text-gray-500 mt-0.5">
-                  💡 Shipments imported under <b>Totes</b> will store all tracking IDs while displaying directly in the Tote ID email column.
-                </p>
               </div>
 
               <div className="flex justify-end gap-1.5 pt-1">
@@ -2019,9 +2089,6 @@ export default function BagSessionManager() {
                   onChange={(e) => setManualBagForm({ ...manualBagForm, tids_text: e.target.value })}
                   className="w-full text-[11px] font-mono border border-gray-300 rounded p-2 focus:border-indigo-500 focus:outline-none"
                 />
-                <p className="text-[10px] text-gray-500 mt-0.5">
-                  You can leave this empty or add items one by one inside the session.
-                </p>
               </div>
 
               <div className="flex justify-end gap-1.5 pt-1 border-t">
@@ -2182,7 +2249,7 @@ export default function BagSessionManager() {
                   </span>
                 </h3>
                 <p className="text-[11px] text-gray-400 mt-0.5">
-                  Proportionate column widths, full continuous table borders, and bounded Tote columns.
+                  Proportionate column widths, full continuous table borders, and bounded Tote columns[cite: 8].
                 </p>
               </div>
               <button
@@ -2225,7 +2292,6 @@ export default function BagSessionManager() {
                 {(() => {
                   const allGroups = mailSessionTarget.bgGroups || [];
                   
-                  // Separate standard bags and sort so Missroute bags always appear at the bottom
                   const standardBagList = allGroups
                     .filter((g) => g.bag_type !== 'tote')
                     .sort((a, b) => {
@@ -2264,9 +2330,7 @@ export default function BagSessionManager() {
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '20%', color: '#FFFFFF' }}>BAG TRACKING ID</th>
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '6%', color: '#FFFFFF' }}>COUNT</th>
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '8%', color: '#FFFFFF' }}>TYPE</th>
-                          {/* SPACE GAP */}
                           <th style={{ width: '2%', border: 'none', backgroundColor: 'transparent' }}></th>
-                          {/* TOTE ID HEADER */}
                           <th style={{ border: '1px solid #000000', padding: '5px', width: '14%', backgroundColor: '#4B8B3B', color: '#FFFFFF', whiteSpace: 'nowrap' }}>TOTE ID</th>
                         </tr>
                       </thead>
@@ -2280,7 +2344,6 @@ export default function BagSessionManager() {
                             <tr key={idx} style={{ height: '22px' }}>
                               {idx === 0 && (
                                 <>
-                                  {/* DATE (DD/MM/YYYY) */}
                                   <td
                                     rowSpan={actualRowCount}
                                     style={{
@@ -2294,7 +2357,6 @@ export default function BagSessionManager() {
                                     {formatToDisplayDate(mailSessionTarget.session_date)}
                                   </td>
 
-                                  {/* SENT FROM */}
                                   <td
                                     rowSpan={actualRowCount}
                                     style={{
@@ -2309,7 +2371,6 @@ export default function BagSessionManager() {
                                     {mailSentFrom}
                                   </td>
 
-                                  {/* SENT TO */}
                                   <td
                                     rowSpan={actualRowCount}
                                     style={{
@@ -2323,7 +2384,6 @@ export default function BagSessionManager() {
                                     {mailSentTo}
                                   </td>
 
-                                  {/* BAG COUNT */}
                                   <td
                                     rowSpan={actualRowCount}
                                     style={{
@@ -2340,7 +2400,6 @@ export default function BagSessionManager() {
                                 </>
                               )}
 
-                              {/* SL No */}
                               <td
                                 style={{
                                   backgroundColor: bg ? '#FFF2CC' : '#FFFFFF',
@@ -2352,7 +2411,6 @@ export default function BagSessionManager() {
                                 {bg ? idx + 1 : ''}
                               </td>
 
-                              {/* BAG TRACKING ID */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2367,7 +2425,6 @@ export default function BagSessionManager() {
                                 {bg?.bg_tracking_id || ''}
                               </td>
 
-                              {/* COUNT */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2379,7 +2436,6 @@ export default function BagSessionManager() {
                                 {bg ? bg.items.length : ''}
                               </td>
 
-                              {/* TYPE */}
                               <td
                                 style={{
                                   backgroundColor: bg
@@ -2396,10 +2452,8 @@ export default function BagSessionManager() {
                                 {bg ? (isMissroute ? 'MISS ROUTE' : 'RTO') : ''}
                               </td>
 
-                              {/* SPACE GAP */}
                               <td style={{ border: 'none', backgroundColor: 'transparent' }}></td>
 
-                              {/* TOTE ID */}
                               <td
                                 style={{
                                   border: '1px solid #000000',
@@ -2417,7 +2471,6 @@ export default function BagSessionManager() {
                           );
                         })}
 
-                        {/* FULLY ALIGNED CLOSED 8-COLUMN MAIN SUMMARY ROW */}
                         <tr style={{ height: '24px' }}>
                           <td colSpan={4} style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
                           <td colSpan={2} style={{ backgroundColor: '#4B8B3B', border: '1px solid #000000' }}></td>
@@ -2472,14 +2525,14 @@ export default function BagSessionManager() {
       {confirmModalState.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4 space-y-3 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2 border-b pb-2 text-rose-600">
+            <div className="flex items-center gap-2 border-b pb-2 text-amber-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <h3 className="font-bold text-gray-900 text-sm">{confirmModalState.title}</h3>
             </div>
 
-            <p className="text-xs text-gray-600">{confirmModalState.description}</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{confirmModalState.description}</p>
 
             {confirmModalState.isPasswordRequired && (
               <div>

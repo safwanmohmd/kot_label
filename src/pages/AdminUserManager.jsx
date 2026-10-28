@@ -115,32 +115,30 @@ export default function AdminUserManager() {
     setSavingId(null);
   };
 
+// Replace handleCreateUser inside src/pages/AdminUserManager.jsx
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setActionMsg('');
-    const sanitizedUsername = newUsername.trim().toLowerCase();
+    const cleanUsername = newUsername.trim().toLowerCase();
+    const cleanEmail = newUserEmail.trim().toLowerCase();
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
-      email: newUserEmail.trim(),
-      password: newUserPassword,
-    });
+    try {
+      const { data, error } = await supabase.rpc('admin_create_user', {
+        new_email: cleanEmail,
+        new_username: cleanUsername,
+        new_password: newUserPassword,
+      });
 
-    if (authErr) {
-      setActionMsg(`Error: ${authErr.message}`);
-      return;
-    }
+      if (error) throw error;
+      if (data && !data.success) throw new Error(data.message);
 
-    if (authData?.user) {
-      await supabase
-        .from('profiles')
-        .update({ username: sanitizedUsername })
-        .eq('id', authData.user.id);
-
-      setActionMsg('User registered successfully.');
+      setActionMsg('Operator created successfully without affecting your login.');
       setNewUserEmail('');
       setNewUsername('');
       setNewUserPassword('');
       fetchUsers();
+    } catch (err) {
+      setActionMsg(`Error: ${err.message}`);
     }
   };
 

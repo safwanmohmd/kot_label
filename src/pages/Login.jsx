@@ -1,10 +1,15 @@
-// src/pages/Login.jsx
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Box, Lock, User, ArrowRight, ShieldCheck } from 'lucide-react';
 
+const ALL_MODULE_IDS = [
+  'dashboard', 'create', 'create_prn', 'bulk', 'unmask', 'lp',
+  'eod', 'vendors', 'history', 'lossgen', 'manualdelivery',
+  'verifytid', 'sort', 'gdrive', 'bags', 'search', 'chromebook', 'settings'
+];
+
 export default function Login() {
-  const [identifier, setIdentifier] = useState(''); // Accepts username or email
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,32 +20,43 @@ export default function Login() {
     setErrorMsg('');
 
     try {
-      let loginEmail = identifier.trim().toLowerCase();
+      let rawInput = identifier.trim().toLowerCase();
+      let targetEmail = rawInput;
 
-      // If user typed a username without @, find the matching email from profiles
-      if (!loginEmail.includes('@')) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('email')
-          .ilike('username', loginEmail)
-          .maybeSingle();
+      // If user typed username or email, resolve it via safe RPC function
+      const { data: resolvedEmail, error: rpcError } = await supabase.rpc('get_email_by_username', {
+        user_identifier: rawInput,
+      });
 
-        if (error || !data) {
-          throw new Error('User not found. Please check your username or email.');
-        }
-        loginEmail = data.email;
+      if (!rpcError && resolvedEmail) {
+        targetEmail = resolvedEmail;
+      } else if (!rawInput.includes('@')) {
+        throw new Error('User not found. Please verify your username or email.');
       }
 
-      // Authenticate with Supabase
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
+      // Authenticate
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
         password,
       });
 
       if (authError) throw authError;
+
+      // Optimistic cache for 0ms dashboard load
+      if (authData?.user) {
+        const isAdmin = authData.user.email === 'admin@gmail.com';
+        const instantCache = {
+          id: authData.user.id,
+          email: authData.user.email,
+          username: authData.user.email?.split('@')[0],
+          is_admin: isAdmin,
+          allowed_routes: ALL_MODULE_IDS,
+          show_all_nav_items: true,
+        };
+        localStorage.setItem('kot_cached_profile', JSON.stringify(instantCache));
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Authentication failed');
-    } finally {
       setLoading(false);
     }
   };
@@ -48,7 +64,6 @@ export default function Login() {
   return (
     <div className="fixed inset-0 z-50 bg-[#f8fafc] flex items-center justify-center p-4 overflow-hidden select-none">
       <div className="w-full max-w-[390px] my-auto">
-        {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-12 h-12 rounded-xl bg-[#2563eb] flex items-center justify-center text-white shadow-lg shadow-blue-500/25 mb-2.5">
             <Box className="w-6 h-6" />
@@ -61,7 +76,6 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Card */}
         <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xl shadow-slate-200/50">
           <div className="mb-5">
             <h2 className="text-base font-bold text-slate-900">Sign in to Terminal</h2>
