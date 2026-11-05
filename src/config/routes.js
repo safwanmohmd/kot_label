@@ -17,6 +17,8 @@ import BagSessionManager from '../pages/BagSessionManager.jsx';
 import BulkTrackingSearch from '../pages/BulkTrackingSearch.jsx';
 import KotAutomationConsoleGenerator from '../pages/KotAutomationConsoleGenerator.jsx';
 
+import ShipmentAuditorSender from '../pages/ShipmentAuditorDispatcher.jsx';
+
 export const APP_ROUTES = [
   { id: 'dashboard', label: 'Dashboard', path: '/', component: Dashboard, inNav: true },
   { id: 'create', label: 'Create Label', path: '/create', component: CreateLabel, inNav: true },
@@ -37,6 +39,7 @@ export const APP_ROUTES = [
   { id: 'search', label: 'Bulk Tracking Search', path: '/search', component: BulkTrackingSearch, inNav: true },
   { id: 'chromebook', label: 'Automation Console', path: '/chromebook', component: KotAutomationConsoleGenerator, inNav: true },
   { id: 'settings', label: 'Settings', path: '/settings', component: Settings, inNav: true },
+  { id: 'find', label: 'Find Settings', path: '/find', component: ShipmentAuditorSender, inNav: true },
 ];
 
 // List used by Admin UI for toggling permissions (excludes sub-paths like /create/:id)
