@@ -1,84 +1,67 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Send, Volume2, CheckCircle2, ShieldCheck, Trash2, Key, Tag, X } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { Search, Send, Volume2, CheckCircle2, Trash2, Tag, X, Globe, RefreshCw } from 'lucide-react';
 
-// Default Extension ID stored in local cache
-const EXTENSION_ID_KEY = 'kot_auditor_ext_id';
-const LOCAL_ACTIVE_CACHE_KEY = 'kot_auditor_active_list';
-
-export default function ShipmentAuditorSender() {
+export default function ShipmentAuditorDispatcher() {
   const [rawTids, setRawTids] = useState('');
-  const [extensionId, setExtensionId] = useState(
-    localStorage.getItem(EXTENSION_ID_KEY) || ''
-  );
-  const [activeTids, setActiveTids] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(LOCAL_ACTIVE_CACHE_KEY) || '[]');
-    } catch (e) {
-      return [];
-    }
-  });
+  const [activeTids, setActiveTids] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [dispatched, setDispatched] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
 
-  // Persist extension ID & local cache
-  useEffect(() => {
-    localStorage.setItem(EXTENSION_ID_KEY, extensionId);
-  }, [extensionId]);
+  // 1. Fetch Global List using project's existing Supabase client
+  const fetchGlobalActiveTids = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('auditor_targets')
+        .select('tracking_id')
+        .order('created_at', { ascending: false });
 
-  useEffect(() => {
-    localStorage.setItem(LOCAL_ACTIVE_CACHE_KEY, JSON.stringify(activeTids));
-  }, [activeTids]);
-
-  // Read active TIDs from the extension whenever the page mounts or ID changes
-  const fetchActiveFromExtension = () => {
-    if (typeof window.chrome !== 'undefined' && window.chrome.runtime && window.chrome.runtime.sendMessage && extensionId.trim()) {
-      window.chrome.runtime.sendMessage(
-        extensionId.trim(),
-        { action: 'GET_PERSISTED_AUDITOR_TIDS' },
-        (response) => {
-          if (!window.chrome.runtime.lastError && response && Array.isArray(response.tids)) {
-            setActiveTids(response.tids);
-          }
-        }
-      );
+      if (error) throw error;
+      if (data) {
+        setActiveTids(data.map((d) => d.tracking_id.toUpperCase()));
+      }
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setSyncStatus(`⚠️ Fetch error: ${err.message || 'Check connection'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchActiveFromExtension();
-  }, [extensionId]);
+    fetchGlobalActiveTids();
+  }, []);
 
-  // Clean raw inputs
   const parsedIncomingTids = useMemo(() => {
     return Array.from(
       new Set(
         rawTids
           .split(/[\n,;\s]+/)
-          .map(s => s.trim().toUpperCase())
+          .map((s) => s.trim().toUpperCase())
           .filter(Boolean)
       )
     );
   }, [rawTids]);
 
-  // HIGH 3-BEEP PIERCING NOTICEABLE ALARM
+  // High 3-Beep Piercing Noticeable Alarm Test
   const playHighNoticeableAlarm = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // 3 distinct piercing bursts: Beep (0s) ... Beep (0.16s) ... Beep (0.32s)
-      [0, 0.16, 0.32].forEach(startOffset => {
-        // High harmonic cluster: 2400Hz base with sharp square overtone
-        [2400, 1600].forEach(freq => {
+      [0, 0.16, 0.32].forEach((startOffset) => {
+        [2400, 1600].forEach((freq) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
           osc.type = 'square';
-          
+
           const t = ctx.currentTime + startOffset;
           osc.frequency.setValueAtTime(freq, t);
-          
+
           gain.gain.setValueAtTime(0.35, t);
           gain.gain.setValueAtTime(0.35, t + 0.10);
           gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-          
+
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start(t);
@@ -88,75 +71,84 @@ export default function ShipmentAuditorSender() {
     } catch (e) {}
   };
 
-  // Push new TIDs to Extension & Active List
-  const handleDispatch = (updatedList) => {
-    const finalList = Array.from(new Set(updatedList.map(s => s.trim().toUpperCase()).filter(Boolean)));
-    setActiveTids(finalList);
-
-    // 1. Direct Chrome Extension message
-    if (typeof window.chrome !== 'undefined' && window.chrome.runtime && window.chrome.runtime.sendMessage && extensionId.trim()) {
-      window.chrome.runtime.sendMessage(
-        extensionId.trim(),
-        { type: 'SET_AUDITOR_TARGET_TIDS', tids: finalList },
-        (response) => {
-          if (window.chrome.runtime.lastError) {
-            setSyncStatus('⚠️ Extension tab unreachable. Copied to clipboard.');
-            navigator.clipboard.writeText(finalList.join('\n'));
-          } else {
-            setSyncStatus(`✅ Synced ${finalList.length} TIDs permanently!`);
-          }
-        }
-      );
-    } else {
-      setSyncStatus('📋 Copied to clipboard (Use "Sync from Clipboard" in extension).');
-      navigator.clipboard.writeText(finalList.join('\n'));
-    }
-
-    // 2. BroadcastChannel Fallback
-    try {
-      const channel = new BroadcastChannel('KOT_AUDITOR_CHANNEL');
-      channel.postMessage({ type: 'SYNC_AUDITOR_TIDS', tids: finalList });
-      channel.close();
-    } catch (e) {}
-
-    setDispatched(true);
-    setTimeout(() => {
-      setDispatched(false);
-      setSyncStatus('');
-    }, 3500);
-  };
-
-  const handleAppendNew = () => {
+const handleAppendNew = async () => {
     if (parsedIncomingTids.length === 0) return;
-    const combined = Array.from(new Set([...activeTids, ...parsedIncomingTids]));
-    handleDispatch(combined);
-    setRawTids('');
+    setIsLoading(true);
+    setSyncStatus('Broadcasting to Supabase...');
+
+    // Only supply tracking_id matching the table primary key
+    const rowsToInsert = parsedIncomingTids.map((tid) => ({
+      tracking_id: tid
+    }));
+
+    try {
+      const { error } = await supabase
+        .from('auditor_targets')
+        .upsert(rowsToInsert, { onConflict: 'tracking_id' });
+
+      if (error) throw error;
+
+      setSyncStatus(`✅ Synced ${rowsToInsert.length} TIDs Globally!`);
+      setRawTids('');
+      setDispatched(true);
+      await fetchGlobalActiveTids();
+
+      setTimeout(() => {
+        setDispatched(false);
+        setSyncStatus('');
+      }, 3000);
+    } catch (err) {
+      console.error('Upload error details:', err);
+      setSyncStatus(`⚠️ Sync failed: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRemoveSingle = (tidToRemove) => {
-    const updated = activeTids.filter(id => id !== tidToRemove);
-    handleDispatch(updated);
+  // 3. Remove Single TID
+  const handleRemoveSingle = async (tidToRemove) => {
+    try {
+      const { error } = await supabase
+        .from('auditor_targets')
+        .delete()
+        .eq('tracking_id', tidToRemove);
+
+      if (error) throw error;
+      setActiveTids((prev) => prev.filter((id) => id !== tidToRemove));
+    } catch (err) {
+      console.error('Delete error:', err);
+    }
   };
 
-  const handleClearAll = () => {
-    handleDispatch([]);
-    setRawTids('');
+  // 4. Clear All Globally
+  const handleClearAll = async () => {
+    if (!window.confirm('Clear all missing TIDs globally across all hub devices?')) return;
+    try {
+      const { error } = await supabase
+        .from('auditor_targets')
+        .delete()
+        .neq('tracking_id', '');
+
+      if (error) throw error;
+      setActiveTids([]);
+    } catch (err) {
+      console.error('Clear all error:', err);
+    }
   };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-sans">
-      {/* Header Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
         <div>
           <div className="flex items-center gap-2 text-cyan-400 font-black text-lg">
-            <Search className="h-5 w-5" />
-            <span>Missing Shipment Auditor</span>
+            <Globe className="h-5 w-5" />
+            <span>Shipment Auditor (Global Hub)</span>
             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-              Live Storage Sync
+              Supabase Connected
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Audits reconciliation scans in real-time. Emits an urgent 3-beep alarm when any active missing TID appears.
+            TIDs entered here sync live to all hub workstations and extension terminals.
           </p>
         </div>
 
@@ -171,22 +163,9 @@ export default function ShipmentAuditorSender() {
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         
-        {/* Left Column: Input Panel */}
+        {/* Left Column: Input Form */}
         <div className="md:col-span-6 space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3">
-            {/* Extension ID Input */}
-            <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-              <Key className="h-4 w-4 text-cyan-400 flex-shrink-0" />
-              <span className="text-xs text-slate-400 font-semibold whitespace-nowrap">Extension ID:</span>
-              <input
-                type="text"
-                value={extensionId}
-                onChange={(e) => setExtensionId(e.target.value)}
-                placeholder="Paste ID from chrome://extensions"
-                className="flex-1 bg-transparent border-none text-xs font-mono text-cyan-200 placeholder-slate-600 focus:outline-none"
-              />
-            </div>
-
             <div>
               <div className="flex justify-between items-center mb-1.5">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -198,17 +177,17 @@ export default function ShipmentAuditorSender() {
               </div>
 
               <textarea
-                rows={6}
+                rows={7}
                 value={rawTids}
                 onChange={(e) => setRawTids(e.target.value)}
-                placeholder="Paste missing TIDs here (1 per line or space-separated)...&#10;FMPR100239401&#10;FMPR100239402"
+                placeholder="Paste missing TIDs here...&#10;FMPR100239401&#10;FMPR100239402"
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs font-mono text-cyan-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 resize-y"
               />
             </div>
 
             <div className="flex flex-col gap-2 pt-1">
               <button
-                disabled={parsedIncomingTids.length === 0}
+                disabled={parsedIncomingTids.length === 0 || isLoading}
                 onClick={handleAppendNew}
                 className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all shadow ${
                   dispatched
@@ -219,12 +198,12 @@ export default function ShipmentAuditorSender() {
                 {dispatched ? (
                   <>
                     <CheckCircle2 className="h-4 w-4" />
-                    Sent to Extension!
+                    Broadcasted to All Extensions!
                   </>
                 ) : (
                   <>
                     <Send className="h-4 w-4" />
-                    Sync & Save to Extension
+                    {isLoading ? 'Syncing...' : 'Broadcast to All Devices (Global)'}
                   </>
                 )}
               </button>
@@ -235,33 +214,42 @@ export default function ShipmentAuditorSender() {
           </div>
         </div>
 
-        {/* Right Column: Active TIDs Display */}
+        {/* Right Column: Active Cloud TIDs */}
         <div className="md:col-span-6 flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <Tag className="h-4 w-4 text-cyan-400" />
               <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                Active In Extension ({activeTids.length})
+                Active In Cloud ({activeTids.length})
               </span>
             </div>
-            {activeTids.length > 0 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleClearAll}
-                className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 font-bold px-2 py-0.5 rounded bg-red-950/40 border border-red-800/60"
+                onClick={fetchGlobalActiveTids}
+                className="text-slate-400 hover:text-cyan-400 p-1"
+                title="Refresh Cloud Data"
               >
-                <Trash2 className="h-3 w-3" />
-                Clear All
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
-            )}
+              {activeTids.length > 0 && (
+                <button
+                  onClick={handleClearAll}
+                  className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 font-bold px-2 py-0.5 rounded bg-red-950/40 border border-red-800/60"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear All
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="p-4 flex-1 overflow-y-auto max-h-[380px] space-y-2">
             {activeTids.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-500">
-                No active missing TIDs stored in extension memory.
+                No active missing TIDs in Supabase.
                 <br />
                 <span className="text-[11px] text-slate-600 mt-1 block">
-                  Paste tracking numbers on the left and click "Sync & Save to Extension".
+                  Add tracking numbers on the left to sync to all hub workstations.
                 </span>
               </div>
             ) : (
@@ -286,13 +274,11 @@ export default function ShipmentAuditorSender() {
           </div>
 
           <div className="px-4 py-2 bg-slate-950 border-t border-slate-800 text-[11px] text-slate-500 font-mono flex items-center justify-between">
-            <span>Auto-refreshed via <code>chrome.storage.local</code></span>
-            <button
-              onClick={fetchActiveFromExtension}
-              className="text-cyan-400 hover:underline"
-            >
-              Force Refresh
-            </button>
+            <span>Extensions poll every 8 seconds</span>
+            <span className="text-emerald-400 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Live Connected
+            </span>
           </div>
         </div>
 
