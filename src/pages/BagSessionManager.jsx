@@ -48,6 +48,18 @@ export default function BagSessionManager() {
   const [totalSessionCount, setTotalSessionCount] = useState(0);
   const [sessionPage, setSessionPage] = useState(1);
 
+  // Global Dashboard Metrics State (Fast server-side counts)
+  const [dashboardMetrics, setDashboardMetrics] = useState({
+    totalSessions: 0,
+    openSessions: 0,
+    closedSessions: 0,
+    totalBags: 0,
+    totalShipments: 0,
+    todaySessions: 0,
+    todayBags: 0,
+    todayShipments: 0,
+  });
+
   // Active Session & Modal Selection
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [sessionDetails, setSessionDetails] = useState(null);
@@ -66,7 +78,7 @@ export default function BagSessionManager() {
   // Manual Single Bag Creator Modal State
   const [manualBagForm, setManualBagForm] = useState({
     bg_tracking_id: '',
-    bag_type: 'rto',
+    bag_type: 'tro',
     tids_text: '',
   });
   const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
@@ -84,8 +96,8 @@ export default function BagSessionManager() {
     onConfirm: null,
   });
 
-  // Bag Type State ('rto' | 'missroute' | 'tote')
-  const [selectedBagType, setSelectedBagType] = useState('rto');
+  // Bag Type State ('tro' | 'missroute' | 'tote')
+  const [selectedBagType, setSelectedBagType] = useState('tro');
 
   // Quick single item scanning inside inspector modal
   const [modalSingleTrackingInput, setModalSingleTrackingInput] = useState('');
@@ -136,7 +148,7 @@ export default function BagSessionManager() {
           bag_id_fk: item.bag_id_fk,
           bag_id: item.bag_id,
           category: item.category,
-          bag_type: item.bag_type || item.destination || 'rto',
+          bag_type: item.bag_type || item.destination || 'tro',
           status: item.status || 'manifested',
           items: [],
         };
@@ -146,7 +158,55 @@ export default function BagSessionManager() {
     return Object.values(map);
   };
 
-  // OPTIMIZED: Loads ONLY 5 sessions at a time from Postgres
+  // HIGH-SPEED METRICS: Uses { count: 'exact', head: true } - zero row payload over network
+  const fetchGlobalMetrics = useCallback(async () => {
+    try {
+      const [
+        totalSessionsRes,
+        openSessionsRes,
+        closedSessionsRes,
+        totalBagsRes,
+        totalShipmentsRes,
+        todaySessionsRes,
+      ] = await Promise.all([
+        supabase.from('bag_sessions').select('*', { count: 'exact', head: true }),
+        supabase.from('bag_sessions').select('*', { count: 'exact', head: true }).in('status', ['open', 'active']),
+        supabase.from('bag_sessions').select('*', { count: 'exact', head: true }).in('status', ['completed', 'closed']),
+        supabase.from('dispatch_bags').select('*', { count: 'exact', head: true }),
+        supabase.from('bagged_items').select('*', { count: 'exact', head: true }),
+        supabase.from('bag_sessions').select('id', { count: 'exact' }).eq('session_date', todayIso),
+      ]);
+
+      const todaySessionIds = (todaySessionsRes.data || []).map((s) => s.id);
+
+      let todayBagsCount = 0;
+      let todayShipmentsCount = 0;
+
+      if (todaySessionIds.length > 0) {
+        const [todayBagsRes, todayShipmentsRes] = await Promise.all([
+          supabase.from('dispatch_bags').select('*', { count: 'exact', head: true }).in('session_id', todaySessionIds),
+          supabase.from('bagged_items').select('*', { count: 'exact', head: true }).in('session_id', todaySessionIds),
+        ]);
+        todayBagsCount = todayBagsRes.count || 0;
+        todayShipmentsCount = todayShipmentsRes.count || 0;
+      }
+
+      setDashboardMetrics({
+        totalSessions: totalSessionsRes.count || 0,
+        openSessions: openSessionsRes.count || 0,
+        closedSessions: closedSessionsRes.count || 0,
+        totalBags: totalBagsRes.count || 0,
+        totalShipments: totalShipmentsRes.count || 0,
+        todaySessions: todaySessionsRes.count || 0,
+        todayBags: todayBagsCount,
+        todayShipments: todayShipmentsCount,
+      });
+    } catch (err) {
+      console.error('Failed to load summary metrics:', err);
+    }
+  }, [todayIso]);
+
+  // OPTIMIZED PAGINATED SESSIONS (5 sessions per query)
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
@@ -182,7 +242,6 @@ export default function BagSessionManager() {
           )
         `, { count: 'exact' });
 
-      // Apply DB filters
       if (dashboardFilterDate) {
         query = query.eq('session_date', dashboardFilterDate);
       }
@@ -213,7 +272,7 @@ export default function BagSessionManager() {
           (b.bagged_items || []).forEach((item) =>
             allItems.push({
               ...item,
-              bag_type: b.destination || 'rto',
+              bag_type: b.destination || 'tro',
             })
           );
         });
@@ -245,8 +304,9 @@ export default function BagSessionManager() {
   }, [sessionPage, dashboardFilterDate, dashboardFilterStatus, sessionSearchTerm, todayIso, showToast]);
 
   useEffect(() => {
+    fetchGlobalMetrics();
     fetchSessions();
-  }, [fetchSessions]);
+  }, [fetchGlobalMetrics, fetchSessions]);
 
   const handleSelectSession = (session) => {
     setSelectedSessionId(session.id);
@@ -411,6 +471,7 @@ export default function BagSessionManager() {
         notes: '',
       });
       setIsCreatingSession(false);
+      await fetchGlobalMetrics();
       await fetchSessions();
       handleSelectSession({ ...data, rawBags: [], bgGroups: [], totalUniqueBgs: 0, totalPackets: 0, allItems: [] });
     } catch (err) {
@@ -464,6 +525,7 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast(`Session marked as ${nextStatus === 'open' ? 'reopened' : 'closed'}!`, 'success');
+        await fetchGlobalMetrics();
         await fetchSessions();
 
         if (nextStatus === 'completed') {
@@ -592,7 +654,7 @@ export default function BagSessionManager() {
           }
         }
 
-        const bagLabel = selectedBagType === 'rto' ? 'rto Bags' : selectedBagType === 'missroute' ? 'Missroute Bags' : 'Totes';
+        const bagLabel = selectedBagType === 'tro' ? 'TRO Bags' : selectedBagType === 'missroute' ? 'Missroute Bags' : 'Totes';
 
         if (skippedCount > 0) {
           showToast(
@@ -609,6 +671,7 @@ export default function BagSessionManager() {
         setRawBulkData('');
         setIsBulkImporting(false);
         setTargetBgForImport(null);
+        await fetchGlobalMetrics();
         await fetchSessions();
       } catch (err) {
         console.error('Import error:', err);
@@ -714,8 +777,9 @@ export default function BagSessionManager() {
           showToast(`Created ${manualBagForm.bag_type.toUpperCase()} ID ${customBgId} successfully!`, 'success');
         }
 
-        setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
+        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
         setIsManualBagModalOpen(false);
+        await fetchGlobalMetrics();
         await fetchSessions();
       } catch (err) {
         console.error('Manual bag creation error:', err);
@@ -758,7 +822,7 @@ export default function BagSessionManager() {
                 session_id: selectedBgGroup.sessionId || sessionDetails?.id,
                 bag_id: selectedBgGroup.bag_id || selectedBgGroup.bg_tracking_id,
                 bg_tracking_id: selectedBgGroup.bg_tracking_id,
-                destination: selectedBgGroup.bag_type || 'rto',
+                destination: selectedBgGroup.bag_type || 'tro',
                 status: 'open',
               },
             ])
@@ -785,6 +849,7 @@ export default function BagSessionManager() {
 
         setModalSingleTrackingInput('');
         showToast(`Added ${val}`, 'success');
+        await fetchGlobalMetrics();
         await fetchSessions();
       } catch (err) {
         showToast(err.message || 'Failed to add shipment', 'error');
@@ -806,7 +871,8 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast('Session removed successfully', 'success');
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        await fetchGlobalMetrics();
+        await fetchSessions();
 
         if (selectedSessionId === sessionId) {
           setSelectedSessionId(null);
@@ -854,6 +920,7 @@ export default function BagSessionManager() {
         });
 
         if (selectedBgGroup?.bg_tracking_id === bgTrackingId) setSelectedBgGroup(null);
+        await fetchGlobalMetrics();
         await fetchSessions();
       } catch (err) {
         showToast(err.message || 'Failed to delete record', 'error');
@@ -888,6 +955,7 @@ export default function BagSessionManager() {
           };
         });
 
+        await fetchGlobalMetrics();
         await fetchSessions();
       } catch (err) {
         showToast(err.message || 'Failed to delete item', 'error');
@@ -904,7 +972,6 @@ export default function BagSessionManager() {
     });
   };
 
-  // OPTIMIZED: Indexed query limited to 100 results
   const handleGlobalSearch = async (e) => {
     e?.preventDefault();
     if (!globalQuery.trim()) return;
@@ -995,7 +1062,7 @@ export default function BagSessionManager() {
     const rows = session.allItems.map((item) => [
       formatToDisplayDate(session.session_date),
       `"${session.title}"`,
-      (item.bag_type || 'rto').toUpperCase(),
+      (item.bag_type || 'tro').toUpperCase(),
       item.bg_tracking_id || 'N/A',
       item.tracking_id,
       item.category || 'SUR/SURF',
@@ -1012,6 +1079,7 @@ export default function BagSessionManager() {
   };
 
   const totalPages = Math.ceil(totalSessionCount / SESSIONS_PER_PAGE) || 1;
+  const avgPerBag = dashboardMetrics.totalBags > 0 ? (dashboardMetrics.totalShipments / dashboardMetrics.totalBags).toFixed(1) : 0;
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-4 space-y-4 text-xs">
@@ -1028,7 +1096,7 @@ export default function BagSessionManager() {
               Logistics Dispatch Hub
             </h1>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              High-Speed Indexed Pagination (5 Sessions / Page) & On-Demand Parcel Querying
+              Unique BG Tracking ID management, TRO, Missroute & Tote categorization, and mailable dispatch reports[cite: 8].
             </p>
           </div>
         </div>
@@ -1065,6 +1133,40 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
+          {/* Top Key Metrics Banner (All 50k+ shipments & today's counts without downloading rows) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
+              <p className="text-lg font-black text-gray-900 mt-0.5">{dashboardMetrics.totalSessions}</p>
+              <span className="text-[9px] text-emerald-600 font-semibold">{dashboardMetrics.openSessions} Open</span>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-indigo-500">Unique Bags/Totes</span>
+              <p className="text-lg font-black text-indigo-600 mt-0.5">{dashboardMetrics.totalBags}</p>
+              <span className="text-[9px] text-gray-400 font-medium">~{avgPerBag} pkts/bg</span>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-emerald-500">Total Shipments</span>
+              <p className="text-lg font-black text-emerald-600 mt-0.5">{dashboardMetrics.totalShipments.toLocaleString()}</p>
+              <span className="text-[9px] text-indigo-500 font-semibold">All Time Manifested</span>
+            </div>
+            <div className="bg-gradient-to-br from-indigo-50 to-white p-3 rounded-lg border border-indigo-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-indigo-700">Today's Sessions</span>
+              <p className="text-lg font-black text-indigo-900 mt-0.5">{dashboardMetrics.todaySessions}</p>
+              <span className="text-[9px] text-indigo-600 font-medium">{dashboardMetrics.todayBags} Bags active</span>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-50 to-white p-3 rounded-lg border border-emerald-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-emerald-700">Today's Shipments</span>
+              <p className="text-lg font-black text-emerald-900 mt-0.5">{dashboardMetrics.todayShipments.toLocaleString()}</p>
+              <span className="text-[9px] text-emerald-600 font-medium">Dispatched Today</span>
+            </div>
+            <div className="bg-gradient-to-br from-gray-50 to-white p-3 rounded-lg border border-gray-200 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase text-gray-500">Closed Shifts</span>
+              <p className="text-lg font-black text-gray-800 mt-0.5">{dashboardMetrics.closedSessions}</p>
+              <span className="text-[9px] text-gray-400 font-medium">Archived Sessions</span>
+            </div>
+          </div>
+
           {/* Filter Bar */}
           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-2 items-center">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
@@ -1088,7 +1190,7 @@ export default function BagSessionManager() {
                     dashboardFilterStatus === 'all' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500'
                   }`}
                 >
-                  All
+                  All ({dashboardMetrics.totalSessions})
                 </button>
                 <button
                   onClick={() => {
@@ -1099,7 +1201,7 @@ export default function BagSessionManager() {
                     dashboardFilterStatus === 'today' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700'
                   }`}
                 >
-                  Today
+                  Today ({dashboardMetrics.todaySessions})
                 </button>
                 <button
                   onClick={() => {
@@ -1110,7 +1212,7 @@ export default function BagSessionManager() {
                     dashboardFilterStatus === 'open' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700'
                   }`}
                 >
-                  Open
+                  Open ({dashboardMetrics.openSessions})
                 </button>
                 <button
                   onClick={() => {
@@ -1121,7 +1223,7 @@ export default function BagSessionManager() {
                     dashboardFilterStatus === 'completed' ? 'bg-gray-700 text-white shadow-2xs' : 'text-gray-600'
                   }`}
                 >
-                  Closed
+                  Closed ({dashboardMetrics.closedSessions})
                 </button>
               </div>
 
@@ -1333,7 +1435,7 @@ export default function BagSessionManager() {
                                         : 'bg-blue-100 text-blue-800'
                                     }`}
                                   >
-                                    {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
+                                    {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                                   </span>
                                   <span className="bg-white border text-gray-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full shadow-2xs">
                                     {group.items.length}
@@ -1433,7 +1535,7 @@ export default function BagSessionManager() {
                 <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                   <button
                     onClick={() => {
-                      setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
+                      setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
                       setIsManualBagModalOpen(true);
                     }}
                     className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-2xs transition flex items-center justify-center gap-1"
@@ -1496,7 +1598,7 @@ export default function BagSessionManager() {
                     className="text-[11px] border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none"
                   >
                     <option value="all">All Types</option>
-                    <option value="rto">RTO Bags</option>
+                    <option value="tro">TRO Bags</option>
                     <option value="missroute">Missroute Bags</option>
                     <option value="tote">Totes Only</option>
                   </select>
@@ -1518,7 +1620,7 @@ export default function BagSessionManager() {
                   <div className="flex justify-center gap-2">
                     <button
                       onClick={() => {
-                        setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
+                        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
                         setIsManualBagModalOpen(true);
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
@@ -1561,7 +1663,7 @@ export default function BagSessionManager() {
                                     : 'bg-blue-100 text-blue-800'
                                 }`}
                               >
-                                {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
+                                {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                               </span>
                               <span className="font-mono text-xs font-black text-gray-900 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
                                 {group.bg_tracking_id}
@@ -1595,7 +1697,7 @@ export default function BagSessionManager() {
                           <button
                             onClick={() => {
                               setTargetBgForImport(group.bg_tracking_id);
-                              setSelectedBagType(group.bag_type || 'rto');
+                              setSelectedBagType(group.bag_type || 'tro');
                               setIsBulkImporting(true);
                             }}
                             className="p-1 text-gray-500 hover:text-emerald-700 rounded hover:bg-emerald-50 border border-gray-200"
@@ -1713,7 +1815,7 @@ export default function BagSessionManager() {
                                   : 'bg-blue-100 text-blue-800'
                               }`}
                             >
-                              {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
+                              {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
                             </span>
                           </td>
                           <td className="py-1.5 px-3 font-mono font-bold text-gray-900">{item.bg_tracking_id || 'N/A'}</td>
@@ -1826,14 +1928,14 @@ export default function BagSessionManager() {
                 <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setSelectedBagType('rto')}
+                    onClick={() => setSelectedBagType('tro')}
                     className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      selectedBagType === 'rto'
+                      selectedBagType === 'tro'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 RTO Bag</span>
+                    <span>📦 TRO Bag</span>
                   </button>
                   <button
                     type="button"
@@ -1940,14 +2042,14 @@ export default function BagSessionManager() {
                 <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'rto' })}
+                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'tro' })}
                     className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      manualBagForm.bag_type === 'rto'
+                      manualBagForm.bag_type === 'tro'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 RTO Bag</span>
+                    <span>📦 TRO Bag</span>
                   </button>
                   <button
                     type="button"
@@ -2024,7 +2126,7 @@ export default function BagSessionManager() {
                         : 'bg-blue-100 text-blue-800'
                     }`}
                   >
-                    {selectedBgGroup.bag_type === 'tote' ? 'TOTE' : selectedBgGroup.bag_type === 'missroute' ? 'Missroute Bag' : 'RTO Bag'}
+                    {selectedBgGroup.bag_type === 'tote' ? 'TOTE' : selectedBgGroup.bag_type === 'missroute' ? 'Missroute Bag' : 'TRO Bag'}
                   </span>
                   <h3 className="font-bold text-gray-900 text-xs">
                     ID: <span className="font-mono text-gray-900 font-black">{selectedBgGroup.bg_tracking_id}</span>
