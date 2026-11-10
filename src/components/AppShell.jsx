@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   LogOut,
   Box,
+  Tag,
   Lock
 } from 'lucide-react';
 
@@ -42,6 +43,7 @@ const SIDEBAR_SECTIONS = [
     category: 'TRACKING & INSPECTION',
     items: [
       { id: 'bags', label: 'PRE ALERT', path: '/bags', icon: Briefcase },
+      { id: 'find', label: 'deck auditor', path: '/find', icon: Tag },
       { id: 'search', label: 'Shipment Auditor', path: '/search', icon: Search },
       { id: 'eod', label: 'EOD Report', path: '/eod', icon: FileSpreadsheet },
       { id: 'verifytid', label: 'Return Verification', path: '/verifytid', icon: CheckCircle },
