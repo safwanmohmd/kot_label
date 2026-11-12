@@ -1,18 +1,26 @@
 import React, { useState, useMemo } from 'react';
 
+// Hardcoded Supabase Configuration embedded into the generated script
+const SCRIPT_SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL || 'https://vabozdcfghbmsuagbkyz.supabase.co';
+const SCRIPT_SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY || 'YOUR_VITE_SUPABASE_ANON_KEY_HERE';
+
 export default function KotAutomationConsoleGenerator() {
-  const [activeTab, setActiveTab] = useState('watcher'); // 'watcher' | 'runsheet' | 'scanner' | 'prc'
+  const [activeTab, setActiveTab] = useState('watcher'); // 'watcher' | 'auditor' | 'runsheet' | 'scanner' | 'prc'
   const [copied, setCopied] = useState(false);
 
   // Common Configuration
   const [rawTids, setRawTids] = useState('');
-  const [stepDelay, setStepDelay] = useState(500); // Default to 500ms matching runsheet.js
+  const [stepDelay, setStepDelay] = useState(500);
   const [enableKeepAwake, setEnableKeepAwake] = useState(true);
 
-  // Live Watcher State (Manual Scan - Zero TIDs needed)
+  // Live Watcher State
   const [enableWatcherCpd, setEnableWatcherCpd] = useState(true);
   const [enableWatcherRto, setEnableWatcherRto] = useState(true);
   const [debounceMs, setDebounceMs] = useState(600);
+
+  // Auditor State (Zero UI inputs for Supabase)
+  const [auditorPollInterval, setAuditorPollInterval] = useState(8000);
+  const [auditorLocalAlarm, setAuditorLocalAlarm] = useState(true);
 
   // Scanner & Alarms State (Bulk Queue)
   const [enableCpdAlarm, setEnableCpdAlarm] = useState(true);
@@ -23,10 +31,10 @@ export default function KotAutomationConsoleGenerator() {
   const [filterDuplicates, setFilterDuplicates] = useState(true);
   const [excludeWords, setExcludeWords] = useState('FORWARD, UNDELIVERED, FLIPKART, ESCALATION, VERIFICATION, SHIPMENTS, PACKAGING, MANDATORY');
 
-  // Runsheet Specific State (Matching runsheet.js)
+  // Runsheet Specific State
   const [agentName, setAgentName] = useState('Abdul Basith');
   const [vehicleType, setVehicleType] = useState('Bike');
-  const [actionType, setActionType] = useState('DRAFT'); // 'DRAFT' | 'CONFIRM'
+  const [actionType, setActionType] = useState('DRAFT');
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('09:00 AM');
 
@@ -73,7 +81,7 @@ export default function KotAutomationConsoleGenerator() {
     return result;
   }, [rawTids, isolateTracking, enableExclusions, filterDuplicates, excludeWords]);
 
-  // SCRIPT 1: Live Manual Scan Alarm Watcher
+  // SCRIPT 1: Live Manual Scan Alarm Watcher (Zero TIDs)
   const watcherScript = useMemo(() => {
     return `(() => {
   // =========================================================================
@@ -94,7 +102,7 @@ export default function KotAutomationConsoleGenerator() {
     if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+      console.log("%c💡 Keep-Awake Screen Lock Active", "color:#38bdf8;font-weight:bold;");
       wakeLock.addEventListener('release', () => {
         console.log("💡 Screen lock released.");
       });
@@ -120,7 +128,6 @@ export default function KotAutomationConsoleGenerator() {
     console.warn("⏹ Live Alarm Watcher stopped.");
   };
 
-  // Synthesized Triple Hazard Horn (Beep-Beep-Beep)
   function playRtoAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -146,7 +153,6 @@ export default function KotAutomationConsoleGenerator() {
     } catch (e) {}
   }
 
-  // Synthesized CPD Alarm (Dual Harmonic Chime)
   function playCpdAlarm() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -226,20 +232,312 @@ export default function KotAutomationConsoleGenerator() {
   window._kotObserver = new MutationObserver(() => inspectPageForAlerts());
   window._kotObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  console.log("%c⚡ KOT Live Alarm Watcher Active (Triple Hazard Horn RTO)!", "color:#10b981;font-weight:bold;font-size:14px;");
+  console.log("%c⚡ KOT Live Alarm Watcher Active!", "color:#10b981;font-weight:bold;font-size:14px;");
   console.log("Ready for manual scanner input. Type stopAlarmWatcher() to disconnect.");
 })();`;
   }, [enableWatcherRto, enableWatcherCpd, debounceMs, enableKeepAwake]);
 
-  // SCRIPT 2: Exact Extension Runsheet Engine (Exact runsheet.js Replication)
-  const runsheetScript = useMemo(() => {
+  // SCRIPT 2: Standalone Global Auditor Engine (Embedded Supabase - Zero UI Input)
+  const auditorConsoleScript = useMemo(() => {
     return `(() => {
   // =========================================================================
-  // KOT-ScanDeck: Auto-Runsheet Engine (Exact runsheet.js Replication)
+  // KOT-ScanDeck: Standalone Global Auditor & Manual Scan Logger
+  // Embedded Cloud Credentials - Full Interceptor & Supabase Streaming
   // Generated on: ${new Date().toLocaleString()}
-  // Target Queue: ${parsedTids.length} Shipments
   // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
   // =========================================================================
+  const AUDITOR_CONFIG = {
+    url: ${JSON.stringify(SCRIPT_SUPABASE_URL)},
+    anonKey: ${JSON.stringify(SCRIPT_SUPABASE_ANON_KEY)},
+    pollIntervalMs: ${auditorPollInterval},
+    localAlarmEnabled: ${auditorLocalAlarm},
+    keepAwake: ${enableKeepAwake}
+  };
+
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!AUDITOR_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log("%c💡 Keep-Awake Screen Lock Active", "color:#38bdf8;font-weight:bold;");
+    } catch (err) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  }
+
+  requestWakeLock();
+
+  let auditorTargetSet = new Set();
+  let auditorFoundSet = new Set();
+  let globalRemoteAlarmActive = true;
+  let isAuditorRunning = true;
+  let syncTimer = null;
+  let uiWidgetActive = true;
+
+  // High Piercing 3-Beep Alarm (2400Hz + 1600Hz)
+  function playAuditorPiercingAlarm() {
+    if (!globalRemoteAlarmActive) {
+      console.log("%c[Auditor] Alarm muted: Dashboard Remote Switch is OFF.", "color:#94a3b8;");
+      return;
+    }
+    if (!uiWidgetActive) {
+      console.log("%c[Auditor] Alarm muted: Standalone widget is minimized/hidden.", "color:#94a3b8;");
+      return;
+    }
+
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.16, 0.32].forEach(startOffset => {
+        [2400, 1600].forEach(freq => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          const t = ctx.currentTime + startOffset;
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0.35, t);
+          gain.gain.setValueAtTime(0.35, t + 0.10);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.12);
+        });
+      });
+    } catch (e) {}
+  }
+
+  // 1. Fetch Cloud Target TIDs & Global Remote Alarm Switch from Supabase
+  async function fetchCloudData() {
+    if (!AUDITOR_CONFIG.url || AUDITOR_CONFIG.url.includes('YOUR_PROJECT_ID')) return;
+    try {
+      // Targets
+      const resT = await fetch(\`\${AUDITOR_CONFIG.url}/rest/v1/auditor_targets?select=tracking_id\`, {
+        headers: {
+          'apikey': AUDITOR_CONFIG.anonKey,
+          'Authorization': \`Bearer \${AUDITOR_CONFIG.anonKey}\`
+        }
+      });
+      if (resT.ok) {
+        const data = await resT.json();
+        auditorTargetSet = new Set(data.map(item => item.tracking_id.trim().toUpperCase()));
+      }
+
+      // Remote Alarm Switch
+      const resC = await fetch(\`\${AUDITOR_CONFIG.url}/rest/v1/auditor_config?key=eq.global_alarm_enabled&select=value\`, {
+        headers: {
+          'apikey': AUDITOR_CONFIG.anonKey,
+          'Authorization': \`Bearer \${AUDITOR_CONFIG.anonKey}\`
+        }
+      });
+      if (resC.ok) {
+        const configData = await resC.json();
+        if (configData.length > 0) {
+          globalRemoteAlarmActive = configData[0].value === 'true';
+        }
+      }
+
+      updateWidgetUI();
+    } catch (e) {
+      console.warn('[Auditor] Cloud poll notice:', e);
+    }
+  }
+
+  fetchCloudData();
+  syncTimer = setInterval(fetchCloudData, AUDITOR_CONFIG.pollIntervalMs);
+
+  // 2. Log All Physical Manual Scans & Missing Interceptions to Supabase
+  async function logManualScanToCloud(tid, isMissing) {
+    const timestamp = new Date().toISOString();
+
+    // Universal manual scan logging
+    fetch(\`\${AUDITOR_CONFIG.url}/rest/v1/manual_scans\`, {
+      method: 'POST',
+      headers: {
+        'apikey': AUDITOR_CONFIG.anonKey,
+        'Authorization': \`Bearer \${AUDITOR_CONFIG.anonKey}\`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        tracking_id: tid,
+        scanned_at: timestamp,
+        is_missing_match: isMissing,
+        device_info: 'F12 Console (' + (window.location.hostname || 'Terminal') + ')'
+      })
+    }).catch(() => {});
+
+    // Intercept log for missing parcel
+    if (isMissing) {
+      fetch(\`\${AUDITOR_CONFIG.url}/rest/v1/auditor_found_logs\`, {
+        method: 'POST',
+        headers: {
+          'apikey': AUDITOR_CONFIG.anonKey,
+          'Authorization': \`Bearer \${AUDITOR_CONFIG.anonKey}\`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          tracking_id: tid,
+          found_at: timestamp,
+          notes: 'Scanned on F12 Console Terminal'
+        })
+      }).catch(() => {});
+    }
+  }
+
+  // 3. Hardware Interceptor: Logs Every Manual Physical Scan
+  function setupManualScanInterceptor() {
+    document.addEventListener('keydown', (e) => {
+      if (!isAuditorRunning) return;
+      if (e.key === 'Enter') {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.id === 'enteredShipmentId' || activeEl.getAttribute('data-testid') === 'enterShipment' || activeEl.tagName === 'INPUT')) {
+          
+          if (window._kotIsAutomatedScanningActive) return;
+
+          const scannedTid = (activeEl.value || '').trim().toUpperCase();
+          if (scannedTid.length >= 6) {
+            const isMissing = auditorTargetSet.has(scannedTid);
+
+            // Log EVERY manual scan directly to Supabase
+            logManualScanToCloud(scannedTid, isMissing);
+
+            if (isMissing) {
+              auditorFoundSet.add(scannedTid);
+              if (AUDITOR_CONFIG.localAlarmEnabled) {
+                playAuditorPiercingAlarm();
+              }
+              console.warn(\`%c🚨 [AUDITOR HIT] Missing Parcel Scanned: \${scannedTid}\`, "background:#dc2626;color:#fff;padding:4px 8px;font-weight:bold;font-size:13px;border-radius:4px;");
+              updateWidgetUI();
+            } else {
+              console.log(\`%c[Terminal Scan] Logged: \${scannedTid}\`, "color:#0284c7;font-weight:bold;");
+            }
+          }
+        }
+      }
+    }, true);
+  }
+
+  setupManualScanInterceptor();
+
+  // 4. Fallback DOM Mutation Watcher
+  function inspectDOMForTargets() {
+    if (!isAuditorRunning || !AUDITOR_CONFIG.localAlarmEnabled || auditorTargetSet.size === 0) return;
+    const pageText = (document.body.innerText || document.body.textContent || '').toUpperCase();
+
+    for (const tid of auditorTargetSet) {
+      if (pageText.includes(tid) && !auditorFoundSet.has(tid)) {
+        auditorFoundSet.add(tid);
+        if (AUDITOR_CONFIG.localAlarmEnabled) {
+          playAuditorPiercingAlarm();
+        }
+        logManualScanToCloud(tid, true);
+        console.warn(\`%c🚨 [AUDITOR DOM HIT] Found: \${tid}\`, "background:#d97706;color:#fff;padding:4px 8px;font-weight:bold;");
+        updateWidgetUI();
+      }
+    }
+  }
+
+  const auditorObserver = new MutationObserver(() => inspectDOMForTargets());
+  auditorObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  // 5. Floating Auditor Widget on Page
+  const widgetId = 'kot-console-auditor-widget';
+  let widget = document.getElementById(widgetId);
+  if (!widget) {
+    widget = document.createElement('div');
+    widget.id = widgetId;
+    widget.style.cssText = 'position:fixed;bottom:20px;left:20px;z-index:999999;background:#0f172a;color:#f8fafc;border:1px solid #0891b2;border-radius:10px;padding:8px 12px;font-family:sans-serif;font-size:11px;box-shadow:0 10px 25px rgba(0,0,0,0.5);width:240px;backdrop-filter:blur(6px);user-select:none;';
+    widget.innerHTML = \`
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;padding-bottom:5px;margin-bottom:5px;">
+        <span style="font-weight:900;color:#22d3ee;font-size:11px;">🔍 AUDITOR CONSOLE</span>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <button id="toggle-auditor-ui" style="background:#1e293b;color:#94a3b8;border:none;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:10px;">—</button>
+          <button id="close-auditor-ui" style="background:#1e293b;color:#ef4444;border:none;border-radius:3px;cursor:pointer;padding:1px 5px;font-size:10px;">✕</button>
+        </div>
+      </div>
+      <div id="widget-body" style="display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:#94a3b8;">
+          <span>Target Missing: <b id="auditor-target-count" style="color:#22d3ee;">0</b></span>
+          <span>Found: <b id="auditor-found-count" style="color:#4ade80;">0</b></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+          <span id="remote-cloud-badge" style="font-size:8px;font-weight:800;padding:2px 4px;border-radius:3px;background:#064e3b;color:#6ee7b7;">CLOUD: ON</span>
+          <button id="test-beep-btn" style="background:#0891b2;color:#fff;border:none;padding:2px 6px;border-radius:4px;cursor:pointer;font-size:9px;font-weight:700;">🔊 Test</button>
+        </div>
+        <div id="found-items-list" style="max-height:50px;overflow-y:auto;background:#020617;border:1px solid #1e293b;border-radius:4px;padding:3px;font-family:monospace;font-size:9px;color:#38bdf8;margin-top:2px;">
+          No missing hits yet
+        </div>
+      </div>
+    \`;
+    document.body.appendChild(widget);
+
+    const toggleBtn = widget.querySelector('#toggle-auditor-ui');
+    const closeBtn = widget.querySelector('#close-auditor-ui');
+    const testBeepBtn = widget.querySelector('#test-beep-btn');
+    const widgetBody = widget.querySelector('#widget-body');
+
+    toggleBtn.onclick = () => {
+      uiWidgetActive = !uiWidgetActive;
+      widgetBody.style.display = uiWidgetActive ? 'flex' : 'none';
+      toggleBtn.textContent = uiWidgetActive ? '—' : '+';
+    };
+
+    closeBtn.onclick = () => {
+      window.stopAuditorConsole();
+    };
+
+    testBeepBtn.onclick = () => {
+      playAuditorPiercingAlarm();
+    };
+  }
+
+  function updateWidgetUI() {
+    const tCount = document.getElementById('auditor-target-count');
+    const fCount = document.getElementById('auditor-found-count');
+    const cloudBadge = document.getElementById('remote-cloud-badge');
+    const fList = document.getElementById('found-items-list');
+
+    if (tCount) tCount.textContent = auditorTargetSet.size;
+    if (fCount) fCount.textContent = auditorFoundSet.size;
+
+    if (cloudBadge) {
+      cloudBadge.style.background = globalRemoteAlarmActive ? '#064e3b' : '#7f1d1d';
+      cloudBadge.style.color = globalRemoteAlarmActive ? '#6ee7b7' : '#fca5a5';
+      cloudBadge.textContent = \`CLOUD: \${globalRemoteAlarmActive ? 'ON' : 'OFF'}\`;
+    }
+
+    if (fList) {
+      if (auditorFoundSet.size === 0) {
+        fList.innerHTML = '<span style="color:#64748b;">No missing hits yet</span>';
+      } else {
+        fList.innerHTML = Array.from(auditorFoundSet).map(id => \`✅ Found: \${id}\`).join('<br>');
+      }
+    }
+  }
+
+  window.stopAuditorConsole = () => {
+    isAuditorRunning = false;
+    releaseWakeLock();
+    if (syncTimer) clearInterval(syncTimer);
+    if (auditorObserver) auditorObserver.disconnect();
+    const w = document.getElementById(widgetId);
+    if (w) w.remove();
+    console.warn("⏹ Auditor Console Halted & Widget Removed.");
+  };
+
+  console.log("%c🔍 Auditor Console Active! (All manual scans logged to Supabase)", "color:#06b6d4;font-weight:bold;font-size:14px;");
+  console.log("Type stopAuditorConsole() in console to exit.");
+})();`;
+  }, [auditorPollInterval, auditorLocalAlarm, enableKeepAwake]);
+
+  // SCRIPT 3: Runsheet Engine
+  const runsheetScript = useMemo(() => {
+    return `(() => {
   const CONFIG = {
     agentName: ${JSON.stringify(agentName)},
     vehicleType: ${JSON.stringify(vehicleType)},
@@ -256,7 +554,7 @@ export default function KotAutomationConsoleGenerator() {
     if (!CONFIG.keepAwake || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+      console.log("%c💡 Keep-Awake Screen Lock Active", "color:#38bdf8;font-weight:bold;");
     } catch (err) {}
   }
 
@@ -304,7 +602,6 @@ export default function KotAutomationConsoleGenerator() {
     return d;
   }
 
-  // Exact DOM Helper 1: Synthetic Value Injection from runsheet.js
   async function injectValueIntoInput(inputEl, textValue) {
     if (!inputEl) return false;
     inputEl.removeAttribute('disabled');
@@ -329,7 +626,6 @@ export default function KotAutomationConsoleGenerator() {
     return true;
   }
 
-  // Exact DOM Helper 2: Dismiss lingering toast alerts from runsheet.js
   function dismissLingeringToasts() {
     const closeButtons = document.querySelectorAll('div[data-cy="non-acionable-toast"] button, div[data-cy="toastMessage"] button, .Toastify__close-button');
     closeButtons.forEach(btn => {
@@ -337,7 +633,6 @@ export default function KotAutomationConsoleGenerator() {
     });
   }
 
-  // Exact DOM Helper 3: Conflict detection logic from runsheet.js
   function detectPreScanConflict(currentId) {
     const errorContainers = Array.from(document.querySelectorAll('div[data-cy="non-acionable-toast"], div[data-cy="toastMessage"], div[role="alert"], .Toastify__toast-body'));
     const conflictKeywords = ['ALREADY', 'ACTIVE RUNSHEET', 'NOT PRESENT IN DATABASE', 'DOES NOT EXIST', 'INVALID SHIPMENT'];
@@ -360,7 +655,6 @@ export default function KotAutomationConsoleGenerator() {
     return null;
   }
 
-  // Exact DOM Helper 4: Save button resolver from runsheet.js
   function getSaveButton(mode = 'DRAFT') {
     if (mode === 'CONFIRM') {
       return document.querySelector('button[data-cy="saveAndConfirm"], button[data-testid="confirmRunsheet"]');
@@ -368,7 +662,6 @@ export default function KotAutomationConsoleGenerator() {
     return document.querySelector('button[data-cy="save"], button[data-testid="saveRunsheet"]');
   }
 
-  // Exact DOM Helper 5: Button Span clicker from runsheet.js
   function clickButtonOnce(btn) {
     if (!btn) return;
     btn.removeAttribute('disabled');
@@ -387,9 +680,8 @@ export default function KotAutomationConsoleGenerator() {
     }
   }
 
-  // Main Loop from runsheet.js
   async function startRunsheetExecution() {
-    console.log("%c🚀 Starting Runsheet Engine (runsheet.js Replication)...", "color:#4f46e5;font-weight:bold;font-size:14px;");
+    console.log("%c🚀 Starting Runsheet Engine...", "color:#4f46e5;font-weight:bold;font-size:14px;");
     playAlertChime();
 
     let skippedCount = 0;
@@ -400,12 +692,10 @@ export default function KotAutomationConsoleGenerator() {
 
       const currentTrackingId = CONFIG.trackingIds[currentRsIndex];
       document.title = \`[\${currentRsIndex + 1}/\${CONFIG.trackingIds.length}] \${currentTrackingId}\`;
-      console.log(\`[\${currentRsIndex + 1}/\${CONFIG.trackingIds.length}] \${currentTrackingId}\`);
 
       dismissLingeringToasts();
 
       try {
-        // Step 1: Open "Create Runsheet" view if on list
         let createBtn = document.querySelector('button[data-cy="createRunsheetButton"], button[data-track-name="create_runsheet_click"]');
         if (createBtn && createBtn.offsetParent !== null) {
           createBtn.focus();
@@ -413,7 +703,6 @@ export default function KotAutomationConsoleGenerator() {
           await new Promise(r => setTimeout(r, CONFIG.stepDelay + 100));
         }
 
-        // Step 2: Wishmaster Input
         let agentInput = document.querySelector('div[data-cy="selectComponent-agentId"] input, input[id^="react-select-44"]');
         const waitFormStart = Date.now();
         while (!agentInput && Date.now() - waitFormStart < 2500) {
@@ -430,7 +719,6 @@ export default function KotAutomationConsoleGenerator() {
           await new Promise(r => setTimeout(r, 100));
         }
 
-        // Step 3: Vehicle Type Selection
         const vehicleContainer = document.querySelector('div[data-cy="selectComponent-vehicleType"], div[data-testid="selectComponent-vehicleType"]');
         const vehicleInput = vehicleContainer ? vehicleContainer.querySelector('input') : document.querySelector('input[id^="react-select-45"]');
         if (vehicleContainer && vehicleInput) {
@@ -447,7 +735,6 @@ export default function KotAutomationConsoleGenerator() {
           }
         }
 
-        // Step 4: Click Start Scanning
         const startScanBtn = document.querySelector('button[data-cy="buttonStartScanning"]');
         if (startScanBtn && startScanBtn.offsetParent !== null) {
           startScanBtn.focus();
@@ -455,7 +742,6 @@ export default function KotAutomationConsoleGenerator() {
           await new Promise(r => setTimeout(r, 150));
         }
 
-        // Step 5: Input Tracking ID
         let scanInput = document.querySelector('input#enteredShipmentId, input[data-testid="enterShipment"]');
         if (scanInput) {
           scanInput.removeAttribute('disabled');
@@ -463,7 +749,6 @@ export default function KotAutomationConsoleGenerator() {
           await injectValueIntoInput(scanInput, currentTrackingId);
         }
 
-        // Step 6: Wait & Validate Save Button or Conflict
         let saveBtn = null;
         let realConflict = null;
         const checkStart = Date.now();
@@ -494,7 +779,6 @@ export default function KotAutomationConsoleGenerator() {
           continue;
         }
 
-        // Step 7: Save & Redirect Wait
         clickButtonOnce(saveBtn);
         successCount++;
 
@@ -527,8 +811,6 @@ export default function KotAutomationConsoleGenerator() {
     startRunsheetExecution();
   } else {
     const target = getScheduledDate(CONFIG.scheduleTime);
-    console.log(\`%c⏰ Runsheet scheduled for \${CONFIG.scheduleTime} (\${target.toLocaleTimeString()})\`, "color:#6366f1;font-weight:bold;");
-    console.log("Type stopRunsheet() in console to cancel.");
     const timer = setInterval(() => {
       const diff = target.getTime() - Date.now();
       if (diff <= 1000) {
@@ -544,16 +826,9 @@ export default function KotAutomationConsoleGenerator() {
 })();`;
   }, [parsedTids, agentName, vehicleType, actionType, stepDelay, scheduleEnabled, scheduleTime, enableKeepAwake]);
 
-  // SCRIPT 3: Scanner with Dual Engine & Triple Hazard Horn Alarm
+  // SCRIPT 4: Bulk Scanner Injector
   const scannerScript = useMemo(() => {
     return `(() => {
-  // =========================================================================
-  // KOT-ScanDeck: Scanner Injector with Dual Injection Modes & Synth Alarms
-  // Generated on: ${new Date().toLocaleString()}
-  // Target Queue: ${parsedTids.length} Shipments
-  // Mode: ${enablePrcAutomation ? 'PRC AUTOMATION (Hardware Keystroke Simulation)' : 'NORMAL (Extreme Speed Native Setter)'}
-  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
-  // =========================================================================
   const SCANNER_CONFIG = {
     enableCpdAlarm: ${enableCpdAlarm},
     enableRtoAlarm: ${enableRtoAlarm},
@@ -568,7 +843,7 @@ export default function KotAutomationConsoleGenerator() {
     if (!SCANNER_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
+      console.log("%c💡 Keep-Awake Screen Lock Active", "color:#38bdf8;font-weight:bold;");
     } catch (err) {}
   }
 
@@ -587,100 +862,6 @@ export default function KotAutomationConsoleGenerator() {
     releaseWakeLock();
     console.warn("⏹ Scanner halted by user.");
   };
-
-  // Synthesized Triple Hazard Horn (Beep-Beep-Beep)
-  function playSynthRtoAlarm() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [0, 0.22, 0.44].forEach(startOffset => {
-        [587.33, 880.00].forEach(freq => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'square';
-          
-          const t = ctx.currentTime + startOffset;
-          osc.frequency.setValueAtTime(freq, t);
-          
-          gain.gain.setValueAtTime(0.25, t);
-          gain.gain.setValueAtTime(0.25, t + 0.14);
-          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.17);
-          
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(t);
-          osc.stop(t + 0.17);
-        });
-      });
-    } catch (e) {}
-  }
-
-  function playSynthCpdAlarm() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [880, 1174.66].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + (idx * 0.12));
-        gain.gain.setValueAtTime(0.25, ctx.currentTime + (idx * 0.12));
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (idx * 0.12) + 0.35);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + (idx * 0.12));
-        osc.stop(ctx.currentTime + (idx * 0.12) + 0.35);
-      });
-    } catch (e) {}
-  }
-
-  function getTodayDateString() {
-    const d = new Date();
-    return \`\${d.getFullYear()}-\${String(d.getMonth() + 1).padStart(2, '0')}-\${String(d.getDate()).padStart(2, '0')}\`;
-  }
-
-  let lastAlarmTime = 0;
-  function inspectPageForAlerts() {
-    const elements = Array.from(document.querySelectorAll('.sc-AykKC, .fmcvyS, div, td, tr, span'));
-    let isRto = false;
-    let isCpd = false;
-    const today = getTodayDateString();
-
-    const rtoLabel = elements.find(el => {
-      const t = (el.textContent || '').trim().toUpperCase();
-      return t === "IS RTO" || t === "IS RTO:";
-    });
-    if (rtoLabel) {
-      const cell = rtoLabel.closest('.fmcvyS, div, td') || rtoLabel.parentElement;
-      const cTxt = cell ? cell.textContent.toUpperCase() : '';
-      if (cTxt.includes('YES') && !cTxt.includes('IS RTO CV')) isRto = true;
-    }
-
-    const cpdLabel = elements.find(el => {
-      const t = (el.textContent || '').trim().toUpperCase();
-      return t === "CPD" || t === "CPD:";
-    });
-    if (cpdLabel) {
-      const cell = cpdLabel.closest('.fmcvyS, div, td') || cpdLabel.parentElement;
-      const cTxt = cell ? cell.textContent : '';
-      if (cTxt.includes(today)) isCpd = true;
-    }
-
-    const now = Date.now();
-    if (now - lastAlarmTime > 600) {
-      if (isRto && SCANNER_CONFIG.enableRtoAlarm) {
-        console.warn("🚨 RTO DETECTED ON SCREEN!");
-        playSynthRtoAlarm();
-        lastAlarmTime = now;
-      } else if (isCpd && SCANNER_CONFIG.enableCpdAlarm) {
-        console.warn("📅 TODAY CPD DETECTED ON SCREEN!");
-        playSynthCpdAlarm();
-        lastAlarmTime = now;
-      }
-    }
-  }
-
-  const alertObserver = new MutationObserver(() => inspectPageForAlerts());
-  alertObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.stopAlertObserver = () => alertObserver.disconnect();
 
   async function simulateHardwareScan(element, text) {
     const inputProto = window.HTMLInputElement.prototype;
@@ -753,10 +934,7 @@ export default function KotAutomationConsoleGenerator() {
   }
 
   async function startScanning() {
-    if (SCANNER_CONFIG.trackingIds.length === 0) {
-      console.warn("⚠️ No Tracking IDs configured!");
-      return;
-    }
+    if (SCANNER_CONFIG.trackingIds.length === 0) return;
 
     let activeEl = document.activeElement;
     if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA')) {
@@ -768,13 +946,10 @@ export default function KotAutomationConsoleGenerator() {
       return;
     }
 
-    console.log("%c⚡ Barcode Injection Started (\${SCANNER_CONFIG.enablePrcAutomation ? 'PRC Hardware Mode' : 'Normal Speed Mode'})...", "color:#2563eb;font-weight:bold;font-size:14px;");
-
     for (let i = 0; i < SCANNER_CONFIG.trackingIds.length; i++) {
       if (stopInjection) break;
       const tid = SCANNER_CONFIG.trackingIds[i];
       document.title = \`[Scanning \${i + 1}/\${SCANNER_CONFIG.trackingIds.length}] \${tid}\`;
-      console.log(\`[\${i + 1}/\${SCANNER_CONFIG.trackingIds.length}] \${tid}\`);
 
       activeEl.focus();
 
@@ -792,22 +967,15 @@ export default function KotAutomationConsoleGenerator() {
 
     releaseWakeLock();
     document.title = "Scanning Completed ✅";
-    console.log("%c🏁 Barcode Injection Completed!", "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startScanning();
 })();`;
   }, [parsedTids, enableCpdAlarm, enableRtoAlarm, enablePrcAutomation, stepDelay, enableKeepAwake]);
 
-  // SCRIPT 4: Automated PRC (Return / Undelivered / Cancellation)
+  // SCRIPT 5: PRC Cancellation Automation
   const prcScript = useMemo(() => {
     return `(() => {
-  // =========================================================================
-  // KOT-ScanDeck: PRC (Return / Cancellation) Automation
-  // Generated on: ${new Date().toLocaleString()}
-  // Total Shipments: ${parsedTids.length}
-  // Keep Awake: ${enableKeepAwake ? 'ACTIVE' : 'OFF'}
-  // =========================================================================
   const PRC_CONFIG = {
     stepDelay: ${stepDelay},
     primaryReason: ${JSON.stringify(prcReason)},
@@ -822,7 +990,6 @@ export default function KotAutomationConsoleGenerator() {
     if (!PRC_CONFIG.keepAwake || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      console.log("%c💡 Keep-Awake Screen Lock Active (Display will not sleep)", "color:#38bdf8;font-weight:bold;");
     } catch (err) {}
   }
 
@@ -839,7 +1006,6 @@ export default function KotAutomationConsoleGenerator() {
   window.abortPrc = () => {
     stopPrc = true;
     releaseWakeLock();
-    console.warn("⏹ PRC Automation halted by user.");
   };
 
   async function injectValue(el, val) {
@@ -861,14 +1027,12 @@ export default function KotAutomationConsoleGenerator() {
   }
 
   async function startPrcEngine() {
-    console.log("%c⚡ Starting PRC Return Automation...", "color:#dc2626;font-weight:bold;font-size:14px;");
     let success = 0, failed = 0;
 
     for (let i = 0; i < PRC_CONFIG.trackingIds.length; i++) {
       if (stopPrc) break;
       const tid = PRC_CONFIG.trackingIds[i];
       document.title = \`[PRC \${i + 1}/\${PRC_CONFIG.trackingIds.length}] \${tid}\`;
-      console.log(\`[PRC \${i + 1}/\${PRC_CONFIG.trackingIds.length}] Processing: \${tid}\`);
 
       try {
         const searchInput = document.querySelector('input[data-cy="searchShipment"], input#shipment-search');
@@ -923,19 +1087,16 @@ export default function KotAutomationConsoleGenerator() {
           success++;
           await new Promise(r => setTimeout(r, PRC_CONFIG.stepDelay + 300));
         } else {
-          console.warn(\`⚠️ Submit button not clickable for \${tid}\`);
           failed++;
         }
 
       } catch (err) {
-        console.error(\`Failed to PRC \${tid}:\`, err);
         failed++;
       }
     }
 
     releaseWakeLock();
     document.title = "PRC Completed ✅";
-    console.log(\`%c🏁 PRC Finished! (\${success} Completed, \${failed} Failed)\`, "color:#059669;font-weight:bold;font-size:14px;");
   }
 
   startPrcEngine();
@@ -944,10 +1105,11 @@ export default function KotAutomationConsoleGenerator() {
 
   const activeScript = useMemo(() => {
     if (activeTab === 'watcher') return watcherScript;
+    if (activeTab === 'auditor') return auditorConsoleScript;
     if (activeTab === 'runsheet') return runsheetScript;
     if (activeTab === 'scanner') return scannerScript;
     return prcScript;
-  }, [activeTab, watcherScript, runsheetScript, scannerScript, prcScript]);
+  }, [activeTab, watcherScript, auditorConsoleScript, runsheetScript, scannerScript, prcScript]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(activeScript);
@@ -969,7 +1131,7 @@ export default function KotAutomationConsoleGenerator() {
               </span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Zero-install scripts. Run live alarms during manual barcode scanning, or execute runsheets and return automations directly via F12.
+              Zero-install scripts. Run live alarms during manual barcode scanning, or execute runsheets and return automations directly via F12[cite: 8].
             </p>
           </div>
 
@@ -982,6 +1144,14 @@ export default function KotAutomationConsoleGenerator() {
               }`}
             >
               🎧 Live Scan Alarms (No TIDs)
+            </button>
+            <button
+              onClick={() => setActiveTab('auditor')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${
+                activeTab === 'auditor' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              🔍 Auditor Console (Supabase)
             </button>
             <button
               onClick={() => setActiveTab('runsheet')}
@@ -1017,7 +1187,7 @@ export default function KotAutomationConsoleGenerator() {
           <div className="lg:col-span-5 space-y-4">
             
             {/* Show TIDs textarea ONLY for tabs that consume queues */}
-            {activeTab !== 'watcher' && (
+            {activeTab !== 'watcher' && activeTab !== 'auditor' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm">
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
@@ -1035,7 +1205,6 @@ export default function KotAutomationConsoleGenerator() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
                 />
 
-                {/* 3-Column Quick Filters: Regex, Exclusion, Deduplication */}
                 <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-[10.5px]">
                   <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
                     <input
@@ -1070,7 +1239,7 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
-            {/* KEEP AWAKE / SCREEN LOCK TOGGLE CARD */}
+            {/* KEEP AWAKE CARD */}
             <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 shadow-sm">
               <label className="flex items-center justify-between cursor-pointer">
                 <div className="flex items-center gap-2">
@@ -1118,7 +1287,7 @@ export default function KotAutomationConsoleGenerator() {
                   <label className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
                     <div>
                       <span className="text-xs font-bold text-amber-300 block">🔊 RTO Alarm (Triple Hazard Horn)</span>
-                      <span className="text-[10px] text-slate-500">Three-burst caution horn honks (Beep-Beep-Beep) when scanned shipment IS RTO is YES</span>
+                      <span className="text-[10px] text-slate-500">Three-burst caution horn honks when scanned shipment IS RTO is YES</span>
                     </div>
                     <input
                       type="checkbox"
@@ -1146,11 +1315,59 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
-            {/* TAB 2: RUNSHEET CONFIG */}
+            {/* TAB 2: AUDITOR CONSOLE CONFIG (EMBEDDED CREDENTIALS - ZERO UI INPUT) */}
+            {activeTab === 'auditor' && (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3.5">
+                <div className="border-b border-slate-800 pb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                    Standalone Auditor Configuration
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Supabase connection is embedded directly inside the generated script. Paste and run via F12 in any browser.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 font-semibold mb-1">Poll Interval</label>
+                    <select
+                      value={auditorPollInterval}
+                      onChange={(e) => setAuditorPollInterval(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                    >
+                      <option value={5000}>5 Seconds</option>
+                      <option value={8000}>8 Seconds (Default)</option>
+                      <option value={12000}>12 Seconds</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-400 font-semibold mb-1">Console Sound</label>
+                    <select
+                      value={auditorLocalAlarm ? 'true' : 'false'}
+                      onChange={(e) => setAuditorLocalAlarm(e.target.value === 'true')}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                    >
+                      <option value="true">Active (3-Beep)</option>
+                      <option value="false">Muted</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-lg text-[11px] text-cyan-200/90 leading-relaxed space-y-1">
+                  <div className="text-cyan-300 font-bold">✓ Live Cloud Streaming:</div>
+                  <div>• Captures every manual barcode scan and inserts into <code>manual_scans</code>.</div>
+                  <div>• Missing targets trip the piercing 3-beep alarm and record in <code>auditor_found_logs</code>.</div>
+                  <div>• Synchronized with <code>BulkTrackingSearch</code> and remote dashboard switches.</div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: RUNSHEET CONFIG */}
             {activeTab === 'runsheet' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 border-b border-slate-800 pb-2">
-                  Auto-Runsheet Parameters (runsheet.js Replication)
+                  Auto-Runsheet Parameters
                 </h3>
                 
                 <div>
@@ -1216,14 +1433,13 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
-            {/* TAB 3: SCANNER BULK INJECTOR WITH PRC AUTOMATION TOGGLE */}
+            {/* TAB 4: SCANNER BULK INJECTOR */}
             {activeTab === 'scanner' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-blue-400 border-b border-slate-800 pb-2">
                   Bulk Scanner Settings & Mode
                 </h3>
 
-                {/* PRC AUTOMATION MODE TOGGLE CARD */}
                 <div className="p-3 rounded-lg bg-purple-950/40 border border-purple-800/60">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1270,7 +1486,7 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
-            {/* TAB 4: PRC CANCELLATION CONFIG */}
+            {/* TAB 5: PRC RETURN CONFIG */}
             {activeTab === 'prc' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-red-400 border-b border-slate-800 pb-2">
@@ -1319,8 +1535,8 @@ export default function KotAutomationConsoleGenerator() {
               </div>
             )}
 
-            {/* Delay Settings (For runner queues) */}
-            {activeTab !== 'watcher' && (
+            {/* Delay Settings */}
+            {activeTab !== 'watcher' && activeTab !== 'auditor' && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
                 <span className="text-xs text-slate-400 font-semibold">Throttle Step Delay:</span>
                 <div className="flex items-center gap-2">
@@ -1342,13 +1558,17 @@ export default function KotAutomationConsoleGenerator() {
           <div className="lg:col-span-7 flex flex-col bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950 border-b border-slate-800">
               <span className="text-xs font-mono font-bold text-slate-300 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
                 ready_to_run_{activeTab}.js
               </span>
               <button
                 onClick={handleCopy}
                 className={`flex items-center gap-1.5 px-3 py-1 text-white rounded text-xs font-bold transition-all shadow ${
-                  activeTab === 'watcher' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500'
+                  activeTab === 'auditor'
+                    ? 'bg-cyan-600 hover:bg-cyan-500'
+                    : activeTab === 'watcher'
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : 'bg-indigo-600 hover:bg-indigo-500'
                 }`}
               >
                 {copied ? '✅ Copied to Clipboard!' : '📋 Copy Script'}
@@ -1366,7 +1586,7 @@ export default function KotAutomationConsoleGenerator() {
             <div className="px-4 py-2 bg-slate-950 border-t border-slate-800 flex justify-between items-center text-[11px] text-slate-500 font-mono">
               <span>Open ERP → Press <kbd className="px-1 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px]">F12</kbd> → Paste into Console</span>
               <span>
-                Type <code className="text-red-400">{activeTab === 'watcher' ? 'stopAlarmWatcher()' : activeTab === 'runsheet' ? 'stopRunsheet()' : activeTab === 'scanner' ? 'stopScanner()' : 'abortPrc()'}</code> to halt
+                Type <code className="text-red-400">{activeTab === 'watcher' ? 'stopAlarmWatcher()' : activeTab === 'auditor' ? 'stopAuditorConsole()' : activeTab === 'runsheet' ? 'stopRunsheet()' : activeTab === 'scanner' ? 'stopScanner()' : 'abortPrc()'}</code> to halt
               </span>
             </div>
           </div>
