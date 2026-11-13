@@ -35,12 +35,18 @@ export default function BagSessionManager() {
     return dateStr;
   };
 
+  const normalizeBagType = (type) => {
+    if (!type || type === 'tro' || type === 'rto') return 'rto';
+    return type;
+  };
+
   const todayIso = new Date().toISOString().split('T')[0];
 
   // Tabs: 'dashboard' | 'sessions' | 'global_search'
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingBgItems, setLoadingBgItems] = useState(false);
 
   // Sessions & Database Pagination State (5 sessions per page)
   const SESSIONS_PER_PAGE = 5;
@@ -75,10 +81,10 @@ export default function BagSessionManager() {
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
   const [mailSessionTarget, setMailSessionTarget] = useState(null);
 
-  // Manual Single Bag Creator Modal State
+  // Manual Single Bag Creator Modal State ('rto' | 'missroute' | 'tote')
   const [manualBagForm, setManualBagForm] = useState({
     bg_tracking_id: '',
-    bag_type: 'tro',
+    bag_type: 'rto',
     tids_text: '',
   });
   const [isManualBagModalOpen, setIsManualBagModalOpen] = useState(false);
@@ -96,8 +102,8 @@ export default function BagSessionManager() {
     onConfirm: null,
   });
 
-  // Bag Type State ('tro' | 'missroute' | 'tote')
-  const [selectedBagType, setSelectedBagType] = useState('tro');
+  // Bag Type State ('rto' | 'missroute' | 'tote')
+  const [selectedBagType, setSelectedBagType] = useState('rto');
 
   // Quick single item scanning inside inspector modal
   const [modalSingleTrackingInput, setModalSingleTrackingInput] = useState('');
@@ -136,26 +142,6 @@ export default function BagSessionManager() {
       ...prev,
       [sessionId]: !prev[sessionId],
     }));
-  };
-
-  const groupItemsByBgTrackingId = (items = []) => {
-    const map = {};
-    items.forEach((item) => {
-      const bgKey = item.bg_tracking_id?.trim() || 'NO-BG-ID';
-      if (!map[bgKey]) {
-        map[bgKey] = {
-          bg_tracking_id: bgKey,
-          bag_id_fk: item.bag_id_fk,
-          bag_id: item.bag_id,
-          category: item.category,
-          bag_type: item.bag_type || item.destination || 'tro',
-          status: item.status || 'manifested',
-          items: [],
-        };
-      }
-      map[bgKey].items.push(item);
-    });
-    return Object.values(map);
   };
 
   // HIGH-SPEED METRICS: Uses { count: 'exact', head: true } - zero row payload over network
@@ -206,7 +192,7 @@ export default function BagSessionManager() {
     }
   }, [todayIso]);
 
-  // OPTIMIZED PAGINATED SESSIONS (5 sessions per query)
+  // ULTRA-FAST PAGINATED SESSIONS: Fetches only counts per bag instead of 1000s of tracking rows
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
@@ -215,7 +201,8 @@ export default function BagSessionManager() {
 
       let query = supabase
         .from('bag_sessions')
-        .select(`
+        .select(
+          `
           id,
           session_date,
           title,
@@ -228,19 +215,11 @@ export default function BagSessionManager() {
             bg_tracking_id,
             destination,
             status,
-            bagged_items (
-              id,
-              session_id,
-              bag_id_fk,
-              bag_id,
-              tracking_id,
-              bg_tracking_id,
-              category,
-              status,
-              created_at
-            )
+            bagged_items (count)
           )
-        `, { count: 'exact' });
+        `,
+          { count: 'exact' }
+        );
 
       if (dashboardFilterDate) {
         query = query.eq('session_date', dashboardFilterDate);
@@ -267,25 +246,37 @@ export default function BagSessionManager() {
       setTotalSessionCount(count || 0);
 
       const formatted = (data || []).map((s) => {
-        const allItems = [];
+        let totalPackets = 0;
+        const bgMap = {};
+
         (s.dispatch_bags || []).forEach((b) => {
-          (b.bagged_items || []).forEach((item) =>
-            allItems.push({
-              ...item,
-              bag_type: b.destination || 'tro',
-            })
-          );
+          const itemCount = b.bagged_items?.[0]?.count || 0;
+          totalPackets += itemCount;
+          const bgKey = b.bg_tracking_id?.trim() || 'NO-BG-ID';
+
+          if (!bgMap[bgKey]) {
+            bgMap[bgKey] = {
+              bg_tracking_id: bgKey,
+              bag_id_fk: b.id,
+              bag_id: b.bag_id,
+              category: 'SUR/SURF',
+              bag_type: normalizeBagType(b.destination),
+              status: b.status || 'manifested',
+              itemCount: 0,
+              items: [],
+            };
+          }
+          bgMap[bgKey].itemCount += itemCount;
         });
 
-        const bgGroups = groupItemsByBgTrackingId(allItems);
+        const bgGroups = Object.values(bgMap);
 
         return {
           ...s,
           rawBags: s.dispatch_bags || [],
           bgGroups,
           totalUniqueBgs: bgGroups.length,
-          totalPackets: allItems.length,
-          allItems,
+          totalPackets,
         };
       });
 
@@ -307,6 +298,34 @@ export default function BagSessionManager() {
     fetchGlobalMetrics();
     fetchSessions();
   }, [fetchGlobalMetrics, fetchSessions]);
+
+  // ON-DEMAND LAZY LOAD: Fetch tracking IDs only when opening a specific Bag/Tote modal
+  const handleInspectBgGroup = async (group, session) => {
+    setSelectedBgGroup({
+      ...group,
+      sessionTitle: session.title,
+      sessionDate: session.session_date,
+      sessionId: session.id,
+      items: [],
+    });
+    setLoadingBgItems(true);
+    try {
+      const { data, error } = await supabase
+        .from('bagged_items')
+        .select('id, tracking_id, bg_tracking_id, bag_id, category, status, created_at')
+        .eq('session_id', session.id)
+        .eq('bg_tracking_id', group.bg_tracking_id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      setSelectedBgGroup((prev) => (prev ? { ...prev, items: data || [], itemCount: (data || []).length } : null));
+    } catch (err) {
+      showToast(err.message || 'Failed to load tracking IDs', 'error');
+    } finally {
+      setLoadingBgItems(false);
+    }
+  };
 
   const handleSelectSession = (session) => {
     setSelectedSessionId(session.id);
@@ -471,9 +490,8 @@ export default function BagSessionManager() {
         notes: '',
       });
       setIsCreatingSession(false);
-      await fetchGlobalMetrics();
-      await fetchSessions();
-      handleSelectSession({ ...data, rawBags: [], bgGroups: [], totalUniqueBgs: 0, totalPackets: 0, allItems: [] });
+      await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
+      handleSelectSession({ ...data, rawBags: [], bgGroups: [], totalUniqueBgs: 0, totalPackets: 0 });
     } catch (err) {
       showToast(err.message || 'Error creating session', 'error');
     } finally {
@@ -525,8 +543,7 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast(`Session marked as ${nextStatus === 'open' ? 'reopened' : 'closed'}!`, 'success');
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
 
         if (nextStatus === 'completed') {
           const found = sessions.find((s) => s.id === sessionId);
@@ -561,6 +578,7 @@ export default function BagSessionManager() {
     }
   };
 
+  // OPTIMIZED SINGLE-BATCH BULK IMPORT (Eliminates 20-sec sequential network delay)
   const handleBulkImport = async (e) => {
     e?.preventDefault();
     if (!sessionDetails) {
@@ -580,99 +598,125 @@ export default function BagSessionManager() {
           return;
         }
 
+        // 1. Group parsed lines by BG ID
         const bgMap = {};
         parsed.forEach((row) => {
           const bgKey = row.bg_tracking_id;
           if (!bgMap[bgKey]) {
             bgMap[bgKey] = {
               bg_tracking_id: bgKey,
-              bag_id: row.bag_id || 'AUTO-BAG',
+              bag_id: row.bag_id || bgKey,
               items: [],
             };
           }
           bgMap[bgKey].items.push(row);
         });
 
-        let skippedCount = 0;
-        let addedCount = 0;
+        const uniqueBgKeys = Object.keys(bgMap);
 
-        for (const [bgKey, group] of Object.entries(bgMap)) {
-          let existingBag = sessionDetails.rawBags?.find((b) => b.bg_tracking_id === bgKey);
-          let bagFkId = existingBag?.id;
+        // 2. Map existing bags in current session & bulk insert all missing bags in ONE call
+        const bagFkMap = {};
+        const bagsToCreate = [];
+        const bagsToUpdateType = [];
 
-          if (!existingBag) {
-            const { data: newBag, error: newBagErr } = await supabase
-              .from('dispatch_bags')
-              .insert([
-                {
-                  session_id: sessionDetails.id,
-                  bag_id: group.bag_id || bgKey,
-                  bg_tracking_id: bgKey,
-                  destination: selectedBagType,
-                  status: 'open',
-                },
-              ])
-              .select()
-              .single();
-
-            if (newBagErr) throw newBagErr;
-            bagFkId = newBag.id;
-          } else if (existingBag.destination !== selectedBagType) {
-            await supabase
-              .from('dispatch_bags')
-              .update({ destination: selectedBagType })
-              .eq('id', existingBag.id);
-          }
-
-          const currentGroupItems = sessionDetails.bgGroups?.find(
-            (g) => g.bg_tracking_id === bgKey
-          )?.items || [];
-          const existingTrackingIds = new Set(currentGroupItems.map((i) => i.tracking_id));
-
-          const itemsToInsert = [];
-          group.items.forEach((item) => {
-            if (existingTrackingIds.has(item.tracking_id)) {
-              skippedCount++;
-            } else {
-              existingTrackingIds.add(item.tracking_id);
-              itemsToInsert.push({
-                session_id: sessionDetails.id,
-                bag_id_fk: bagFkId,
-                bag_id: item.bag_id || bgKey,
-                tracking_id: item.tracking_id,
-                bg_tracking_id: bgKey,
-                category: item.category || 'SUR/SURF',
-                status: 'manifested',
-              });
+        uniqueBgKeys.forEach((bgKey) => {
+          const existing = sessionDetails.rawBags?.find((b) => b.bg_tracking_id === bgKey);
+          if (existing) {
+            bagFkMap[bgKey] = existing.id;
+            if (normalizeBagType(existing.destination) !== selectedBagType) {
+              bagsToUpdateType.push(existing.id);
             }
-          });
-
-          if (itemsToInsert.length > 0) {
-            const { error: itemsErr } = await supabase.from('bagged_items').insert(itemsToInsert);
-            if (itemsErr) throw itemsErr;
-            addedCount += itemsToInsert.length;
+          } else {
+            bagsToCreate.push({
+              session_id: sessionDetails.id,
+              bag_id: bgMap[bgKey].bag_id,
+              bg_tracking_id: bgKey,
+              destination: selectedBagType,
+              status: 'open',
+            });
           }
+        });
+
+        if (bagsToCreate.length > 0) {
+          const { data: createdBags, error: createBagsErr } = await supabase
+            .from('dispatch_bags')
+            .insert(bagsToCreate)
+            .select('id, bg_tracking_id');
+
+          if (createBagsErr) throw createBagsErr;
+          (createdBags || []).forEach((b) => {
+            bagFkMap[b.bg_tracking_id] = b.id;
+          });
         }
 
-        const bagLabel = selectedBagType === 'tro' ? 'TRO Bags' : selectedBagType === 'missroute' ? 'Missroute Bags' : 'Totes';
+        if (bagsToUpdateType.length > 0) {
+          await supabase
+            .from('dispatch_bags')
+            .update({ destination: selectedBagType })
+            .in('id', bagsToUpdateType);
+        }
+
+        // 3. Single duplicate check query for all tracking IDs in this payload
+        const allIncomingTids = parsed.map((p) => p.tracking_id);
+        const { data: existingItemsData, error: dupCheckErr } = await supabase
+          .from('bagged_items')
+          .select('tracking_id, bg_tracking_id')
+          .eq('session_id', sessionDetails.id)
+          .in('tracking_id', allIncomingTids);
+
+        if (dupCheckErr) throw dupCheckErr;
+
+        const existingPairSet = new Set(
+          (existingItemsData || []).map((item) => `${item.bg_tracking_id}::${item.tracking_id}`)
+        );
+
+        // 4. Build a single flat payload for ONE batch insert
+        const itemsToInsert = [];
+        let skippedCount = 0;
+
+        parsed.forEach((item) => {
+          const pairKey = `${item.bg_tracking_id}::${item.tracking_id}`;
+          if (existingPairSet.has(pairKey)) {
+            skippedCount++;
+          } else {
+            existingPairSet.add(pairKey);
+            itemsToInsert.push({
+              session_id: sessionDetails.id,
+              bag_id_fk: bagFkMap[item.bg_tracking_id],
+              bag_id: item.bag_id || item.bg_tracking_id,
+              tracking_id: item.tracking_id,
+              bg_tracking_id: item.bg_tracking_id,
+              category: item.category || 'SUR/SURF',
+              status: 'manifested',
+            });
+          }
+        });
+
+        if (itemsToInsert.length > 0) {
+          const { error: itemsErr } = await supabase.from('bagged_items').insert(itemsToInsert);
+          if (itemsErr) throw itemsErr;
+        }
+
+        const bagLabel =
+          selectedBagType === 'rto'
+            ? 'RTO Bags'
+            : selectedBagType === 'missroute'
+            ? 'Missroute Bags'
+            : 'Totes';
 
         if (skippedCount > 0) {
           showToast(
-            `Added ${addedCount} [${selectedBagType.toUpperCase()}] shipments. Skipped ${skippedCount} duplicate(s).`,
+            `Added ${itemsToInsert.length} [${selectedBagType.toUpperCase()}] shipments. Skipped ${skippedCount} duplicate(s).`,
             'info'
           );
         } else {
-          showToast(
-            `Successfully imported ${addedCount} shipments into ${bagLabel}!`,
-            'success'
-          );
+          showToast(`Successfully imported ${itemsToInsert.length} shipments into ${bagLabel}!`, 'success');
         }
 
         setRawBulkData('');
         setIsBulkImporting(false);
         setTargetBgForImport(null);
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
       } catch (err) {
         console.error('Import error:', err);
         showToast(err.message || 'Import failed', 'error');
@@ -725,7 +769,7 @@ export default function BagSessionManager() {
 
           if (bagErr) throw bagErr;
           bagFkId = newBag.id;
-        } else if (existingBag.destination !== manualBagForm.bag_type) {
+        } else if (normalizeBagType(existingBag.destination) !== manualBagForm.bag_type) {
           await supabase
             .from('dispatch_bags')
             .update({ destination: manualBagForm.bag_type })
@@ -738,10 +782,14 @@ export default function BagSessionManager() {
           .filter(Boolean);
 
         if (rawTids.length > 0) {
-          const currentGroupItems = sessionDetails.bgGroups?.find(
-            (g) => g.bg_tracking_id === customBgId
-          )?.items || [];
-          const existingTrackingIds = new Set(currentGroupItems.map((i) => i.tracking_id));
+          const { data: existingRows } = await supabase
+            .from('bagged_items')
+            .select('tracking_id')
+            .eq('session_id', sessionDetails.id)
+            .eq('bg_tracking_id', customBgId)
+            .in('tracking_id', rawTids);
+
+          const existingTrackingIds = new Set((existingRows || []).map((r) => r.tracking_id));
 
           const itemsToInsert = [];
           let duplicateCount = 0;
@@ -777,10 +825,9 @@ export default function BagSessionManager() {
           showToast(`Created ${manualBagForm.bag_type.toUpperCase()} ID ${customBgId} successfully!`, 'success');
         }
 
-        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+        setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
         setIsManualBagModalOpen(false);
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
       } catch (err) {
         console.error('Manual bag creation error:', err);
         showToast(err.message || 'Failed to create Bag ID', 'error');
@@ -822,7 +869,7 @@ export default function BagSessionManager() {
                 session_id: selectedBgGroup.sessionId || sessionDetails?.id,
                 bag_id: selectedBgGroup.bag_id || selectedBgGroup.bg_tracking_id,
                 bg_tracking_id: selectedBgGroup.bg_tracking_id,
-                destination: selectedBgGroup.bag_type || 'tro',
+                destination: selectedBgGroup.bag_type || 'rto',
                 status: 'open',
               },
             ])
@@ -833,24 +880,36 @@ export default function BagSessionManager() {
           bagFkId = newBag.id;
         }
 
-        const { error } = await supabase.from('bagged_items').insert([
-          {
-            session_id: selectedBgGroup.sessionId || sessionDetails?.id,
-            bag_id_fk: bagFkId,
-            bag_id: selectedBgGroup.bag_id || selectedBgGroup.bg_tracking_id,
-            tracking_id: val,
-            bg_tracking_id: selectedBgGroup.bg_tracking_id,
-            category: 'SUR/SURF',
-            status: 'manifested',
-          },
-        ]);
+        const { data: insertedItem, error } = await supabase
+          .from('bagged_items')
+          .insert([
+            {
+              session_id: selectedBgGroup.sessionId || sessionDetails?.id,
+              bag_id_fk: bagFkId,
+              bag_id: selectedBgGroup.bag_id || selectedBgGroup.bg_tracking_id,
+              tracking_id: val,
+              bg_tracking_id: selectedBgGroup.bg_tracking_id,
+              category: 'SUR/SURF',
+              status: 'manifested',
+            },
+          ])
+          .select()
+          .single();
 
         if (error) throw error;
 
         setModalSingleTrackingInput('');
+        setSelectedBgGroup((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: [...(prev.items || []), insertedItem],
+                itemCount: (prev.itemCount || 0) + 1,
+              }
+            : null
+        );
         showToast(`Added ${val}`, 'success');
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
       } catch (err) {
         showToast(err.message || 'Failed to add shipment', 'error');
       }
@@ -871,8 +930,7 @@ export default function BagSessionManager() {
         if (error) throw error;
 
         showToast('Session removed successfully', 'success');
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
 
         if (selectedSessionId === sessionId) {
           setSelectedSessionId(null);
@@ -899,13 +957,17 @@ export default function BagSessionManager() {
 
     const performDeleteBg = async () => {
       try {
-        const { error } = await supabase
+        await supabase
           .from('bagged_items')
           .delete()
           .eq('session_id', sessionDetails.id)
           .eq('bg_tracking_id', bgTrackingId);
 
-        if (error) throw error;
+        await supabase
+          .from('dispatch_bags')
+          .delete()
+          .eq('session_id', sessionDetails.id)
+          .eq('bg_tracking_id', bgTrackingId);
 
         showToast(`Bag/Tote ID ${bgTrackingId} deleted`, 'success');
 
@@ -920,8 +982,7 @@ export default function BagSessionManager() {
         });
 
         if (selectedBgGroup?.bg_tracking_id === bgTrackingId) setSelectedBgGroup(null);
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
       } catch (err) {
         showToast(err.message || 'Failed to delete record', 'error');
       }
@@ -952,11 +1013,11 @@ export default function BagSessionManager() {
           return {
             ...prev,
             items: (prev.items || []).filter((i) => i.id !== itemId),
+            itemCount: Math.max((prev.itemCount || 1) - 1, 0),
           };
         });
 
-        await fetchGlobalMetrics();
-        await fetchSessions();
+        await Promise.all([fetchGlobalMetrics(), fetchSessions()]);
       } catch (err) {
         showToast(err.message || 'Failed to delete item', 'error');
       }
@@ -1019,8 +1080,9 @@ export default function BagSessionManager() {
         const matchesSearch = workspaceBgSearch.trim()
           ? g.bg_tracking_id?.toLowerCase().includes(workspaceBgSearch.toLowerCase())
           : true;
+        const normalizedGroupType = normalizeBagType(g.bag_type);
         const matchesType =
-          workspaceBagTypeFilter === 'all' ? true : g.bag_type === workspaceBagTypeFilter;
+          workspaceBagTypeFilter === 'all' ? true : normalizedGroupType === workspaceBagTypeFilter;
         return matchesSearch && matchesType;
       })
       .sort((a, b) => {
@@ -1055,27 +1117,45 @@ export default function BagSessionManager() {
     }
   };
 
-  const exportSessionCSV = (session) => {
-    if (!session || !session.allItems) return;
+  // ON-DEMAND CSV EXPORT: Queries items only when Export CSV is clicked
+  const exportSessionCSV = async (session) => {
+    if (!session) return;
+    showToast('Preparing CSV export...', 'info');
+    try {
+      const { data, error } = await supabase
+        .from('bagged_items')
+        .select(`
+          bg_tracking_id,
+          tracking_id,
+          category,
+          status,
+          dispatch_bags (destination)
+        `)
+        .eq('session_id', session.id);
 
-    const headers = ['Session Date', 'Session Title', 'Bag Type', 'BG Tracking ID', 'Tracking ID', 'Category', 'Status'];
-    const rows = session.allItems.map((item) => [
-      formatToDisplayDate(session.session_date),
-      `"${session.title}"`,
-      (item.bag_type || 'tro').toUpperCase(),
-      item.bg_tracking_id || 'N/A',
-      item.tracking_id,
-      item.category || 'SUR/SURF',
-      item.status || 'manifested',
-    ]);
+      if (error) throw error;
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.href = encodeURI(csvContent);
-    link.download = `Dispatch_${formatToDisplayDate(session.session_date).replace(/\//g, '-')}_${session.title.replace(/\s+/g, '_')}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const headers = ['Session Date', 'Session Title', 'Bag Type', 'BG Tracking ID', 'Tracking ID', 'Category', 'Status'];
+      const rows = (data || []).map((item) => [
+        formatToDisplayDate(session.session_date),
+        `"${session.title}"`,
+        normalizeBagType(item.dispatch_bags?.destination).toUpperCase(),
+        item.bg_tracking_id || 'N/A',
+        item.tracking_id,
+        item.category || 'SUR/SURF',
+        item.status || 'manifested',
+      ]);
+
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      const link = document.createElement('a');
+      link.href = encodeURI(csvContent);
+      link.download = `Dispatch_${formatToDisplayDate(session.session_date).replace(/\//g, '-')}_${session.title.replace(/\s+/g, '_')}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      showToast(err.message || 'Failed to export CSV', 'error');
+    }
   };
 
   const totalPages = Math.ceil(totalSessionCount / SESSIONS_PER_PAGE) || 1;
@@ -1096,7 +1176,7 @@ export default function BagSessionManager() {
               Logistics Dispatch Hub
             </h1>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Unique BG Tracking ID management, TRO, Missroute & Tote categorization, and mailable dispatch reports[cite: 8].
+              Unique BG Tracking ID management, RTO, Missroute & Tote categorization, and mailable dispatch reports.
             </p>
           </div>
         </div>
@@ -1133,7 +1213,7 @@ export default function BagSessionManager() {
       {/* TAB 1: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-4">
-          {/* Top Key Metrics Banner (All 50k+ shipments & today's counts without downloading rows) */}
+          {/* Top Key Metrics Banner */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-2xs">
               <span className="text-[10px] font-bold uppercase text-gray-400">Total Sessions</span>
@@ -1262,7 +1342,7 @@ export default function BagSessionManager() {
             {loading ? (
               <div className="p-8 text-center text-xs text-gray-500 bg-white rounded-lg border flex items-center justify-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
-                Loading last 5 sessions...
+                Loading sessions...
               </div>
             ) : sessions.length === 0 ? (
               <div className="p-8 text-center text-xs text-gray-400 bg-white rounded-lg border border-dashed">
@@ -1402,19 +1482,13 @@ export default function BagSessionManager() {
                           style={!isExpanded ? { WebkitOverflowScrolling: 'touch' } : {}}
                         >
                           {bgList.map((group) => {
-                            const isMissroute = group.bag_type === 'missroute';
-                            const isTote = group.bag_type === 'tote';
+                            const normalizedType = normalizeBagType(group.bag_type);
+                            const isMissroute = normalizedType === 'missroute';
+                            const isTote = normalizedType === 'tote';
                             return (
                               <div
                                 key={group.bg_tracking_id}
-                                onClick={() =>
-                                  setSelectedBgGroup({
-                                    ...group,
-                                    sessionTitle: session.title,
-                                    sessionDate: session.session_date,
-                                    sessionId: session.id,
-                                  })
-                                }
+                                onClick={() => handleInspectBgGroup(group, session)}
                                 className={`p-2 border rounded-md cursor-pointer transition flex flex-col justify-between group shadow-2xs ${
                                   !isExpanded ? 'min-w-[155px] max-w-[170px] shrink-0' : ''
                                 } ${
@@ -1435,10 +1509,10 @@ export default function BagSessionManager() {
                                         : 'bg-blue-100 text-blue-800'
                                     }`}
                                   >
-                                    {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
+                                    {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
                                   </span>
                                   <span className="bg-white border text-gray-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full shadow-2xs">
-                                    {group.items.length}
+                                    {group.itemCount}
                                   </span>
                                 </div>
 
@@ -1535,7 +1609,7 @@ export default function BagSessionManager() {
                 <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                   <button
                     onClick={() => {
-                      setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+                      setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
                       setIsManualBagModalOpen(true);
                     }}
                     className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-2xs transition flex items-center justify-center gap-1"
@@ -1546,6 +1620,7 @@ export default function BagSessionManager() {
                   <button
                     onClick={() => {
                       setTargetBgForImport(null);
+                      setSelectedBagType('rto');
                       setIsBulkImporting(true);
                     }}
                     className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-2xs transition"
@@ -1598,7 +1673,7 @@ export default function BagSessionManager() {
                     className="text-[11px] border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none"
                   >
                     <option value="all">All Types</option>
-                    <option value="tro">TRO Bags</option>
+                    <option value="rto">RTO Bags</option>
                     <option value="missroute">Missroute Bags</option>
                     <option value="tote">Totes Only</option>
                   </select>
@@ -1620,7 +1695,7 @@ export default function BagSessionManager() {
                   <div className="flex justify-center gap-2">
                     <button
                       onClick={() => {
-                        setManualBagForm({ bg_tracking_id: '', bag_type: 'tro', tids_text: '' });
+                        setManualBagForm({ bg_tracking_id: '', bag_type: 'rto', tids_text: '' });
                         setIsManualBagModalOpen(true);
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
@@ -1630,6 +1705,7 @@ export default function BagSessionManager() {
                     <button
                       onClick={() => {
                         setTargetBgForImport(null);
+                        setSelectedBagType('rto');
                         setIsBulkImporting(true);
                       }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-2xs"
@@ -1641,8 +1717,9 @@ export default function BagSessionManager() {
               ) : (
                 <div className="divide-y divide-gray-100 bg-white">
                   {filteredWorkspaceBgs.map((group, idx) => {
-                    const isMissroute = group.bag_type === 'missroute';
-                    const isTote = group.bag_type === 'tote';
+                    const normalizedType = normalizeBagType(group.bag_type);
+                    const isMissroute = normalizedType === 'missroute';
+                    const isTote = normalizedType === 'tote';
                     return (
                       <div
                         key={group.bg_tracking_id}
@@ -1663,7 +1740,7 @@ export default function BagSessionManager() {
                                     : 'bg-blue-100 text-blue-800'
                                 }`}
                               >
-                                {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
+                                {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
                               </span>
                               <span className="font-mono text-xs font-black text-gray-900 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
                                 {group.bg_tracking_id}
@@ -1677,18 +1754,11 @@ export default function BagSessionManager() {
 
                         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                           <span className="bg-emerald-50 text-emerald-800 text-[11px] font-black px-2.5 py-0.5 rounded border border-emerald-200">
-                            {group.items.length} Shipments
+                            {group.itemCount} Shipments
                           </span>
 
                           <button
-                            onClick={() =>
-                              setSelectedBgGroup({
-                                ...group,
-                                sessionTitle: sessionDetails.title,
-                                sessionDate: sessionDetails.session_date,
-                                sessionId: sessionDetails.id,
-                              })
-                            }
+                            onClick={() => handleInspectBgGroup(group, sessionDetails)}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-2.5 py-1 rounded shadow-2xs whitespace-nowrap transition"
                           >
                             Show Tracking IDs
@@ -1697,7 +1767,7 @@ export default function BagSessionManager() {
                           <button
                             onClick={() => {
                               setTargetBgForImport(group.bg_tracking_id);
-                              setSelectedBagType(group.bag_type || 'tro');
+                              setSelectedBagType(normalizedType);
                               setIsBulkImporting(true);
                             }}
                             className="p-1 text-gray-500 hover:text-emerald-700 rounded hover:bg-emerald-50 border border-gray-200"
@@ -1745,7 +1815,7 @@ export default function BagSessionManager() {
             <div>
               <h2 className="text-xs font-bold text-gray-900">Global Historical Search</h2>
               <p className="text-[11px] text-gray-500">
-                Fast indexed lookup across all 50k+ records (limited to 100 results for speed).
+                Fast indexed lookup across all 30k+ records (limited to 100 results for speed).
               </p>
             </div>
 
@@ -1800,9 +1870,9 @@ export default function BagSessionManager() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {globalResults.map((item) => {
-                      const bagType = item.dispatch_bags?.destination;
-                      const isTote = bagType === 'tote';
-                      const isMissroute = bagType === 'missroute';
+                      const normalizedType = normalizeBagType(item.dispatch_bags?.destination);
+                      const isTote = normalizedType === 'tote';
+                      const isMissroute = normalizedType === 'missroute';
                       return (
                         <tr key={item.id} className="hover:bg-gray-50 transition">
                           <td className="py-1.5 px-3">
@@ -1815,7 +1885,7 @@ export default function BagSessionManager() {
                                   : 'bg-blue-100 text-blue-800'
                               }`}
                             >
-                              {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'TRO'}
+                              {isTote ? 'TOTE' : isMissroute ? 'Missroute' : 'RTO'}
                             </span>
                           </td>
                           <td className="py-1.5 px-3 font-mono font-bold text-gray-900">{item.bg_tracking_id || 'N/A'}</td>
@@ -1928,14 +1998,14 @@ export default function BagSessionManager() {
                 <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setSelectedBagType('tro')}
+                    onClick={() => setSelectedBagType('rto')}
                     className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      selectedBagType === 'tro'
+                      selectedBagType === 'rto'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 TRO Bag</span>
+                    <span>📦 RTO Bag</span>
                   </button>
                   <button
                     type="button"
@@ -2042,14 +2112,14 @@ export default function BagSessionManager() {
                 <div className="grid grid-cols-3 gap-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'tro' })}
+                    onClick={() => setManualBagForm({ ...manualBagForm, bag_type: 'rto' })}
                     className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition flex items-center justify-center gap-1 ${
-                      manualBagForm.bag_type === 'tro'
+                      manualBagForm.bag_type === 'rto'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    <span>📦 TRO Bag</span>
+                    <span>📦 RTO Bag</span>
                   </button>
                   <button
                     type="button"
@@ -2119,14 +2189,18 @@ export default function BagSessionManager() {
                 <div className="flex items-center gap-1.5">
                   <span
                     className={`text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
-                      selectedBgGroup.bag_type === 'tote'
+                      normalizeBagType(selectedBgGroup.bag_type) === 'tote'
                         ? 'bg-amber-100 text-amber-900 font-black'
-                        : selectedBgGroup.bag_type === 'missroute'
+                        : normalizeBagType(selectedBgGroup.bag_type) === 'missroute'
                         ? 'bg-rose-100 text-rose-800'
                         : 'bg-blue-100 text-blue-800'
                     }`}
                   >
-                    {selectedBgGroup.bag_type === 'tote' ? 'TOTE' : selectedBgGroup.bag_type === 'missroute' ? 'Missroute Bag' : 'TRO Bag'}
+                    {normalizeBagType(selectedBgGroup.bag_type) === 'tote'
+                      ? 'TOTE'
+                      : normalizeBagType(selectedBgGroup.bag_type) === 'missroute'
+                      ? 'Missroute Bag'
+                      : 'RTO Bag'}
                   </span>
                   <h3 className="font-bold text-gray-900 text-xs">
                     ID: <span className="font-mono text-gray-900 font-black">{selectedBgGroup.bg_tracking_id}</span>
@@ -2135,7 +2209,7 @@ export default function BagSessionManager() {
                 <p className="text-[10px] text-gray-500 mt-0.5">
                   {selectedBgGroup.sessionTitle} • {formatToDisplayDate(selectedBgGroup.sessionDate)} •{' '}
                   <span className="font-semibold text-indigo-600">
-                    {selectedBgGroup.items?.length || 0} Shipments
+                    {selectedBgGroup.items?.length || selectedBgGroup.itemCount || 0} Shipments
                   </span>
                 </p>
               </div>
@@ -2170,9 +2244,11 @@ export default function BagSessionManager() {
             </div>
 
             <div className="p-3 overflow-y-auto flex-1">
-              {(!selectedBgGroup.items || selectedBgGroup.items.length === 0) ? (
+              {loadingBgItems ? (
+                <div className="p-6 text-center text-[11px] text-gray-500">Loading tracking IDs...</div>
+              ) : !selectedBgGroup.items || selectedBgGroup.items.length === 0 ? (
                 <div className="p-6 text-center text-[11px] text-gray-400 italic">
-                  No tracking IDs recorded in this {selectedBgGroup.bag_type === 'tote' ? 'tote' : 'bag'} yet.
+                  No tracking IDs recorded in this {normalizeBagType(selectedBgGroup.bag_type) === 'tote' ? 'tote' : 'bag'} yet.
                 </div>
               ) : (
                 <table className="w-full text-left text-[11px] border-collapse">
@@ -2289,21 +2365,21 @@ export default function BagSessionManager() {
               <div ref={emailTableRef} style={{ fontFamily: 'Calibri, Arial, sans-serif', fontSize: '11px' }}>
                 {(() => {
                   const allGroups = mailSessionTarget.bgGroups || [];
-                  
+
                   const standardBagList = allGroups
-                    .filter((g) => g.bag_type !== 'tote')
+                    .filter((g) => normalizeBagType(g.bag_type) !== 'tote')
                     .sort((a, b) => {
                       if (a.bag_type === 'missroute' && b.bag_type !== 'missroute') return 1;
                       if (a.bag_type !== 'missroute' && b.bag_type === 'missroute') return -1;
                       return 0;
                     });
-                  
+
                   const combinedToteList = allGroups
-                    .filter((g) => g.bag_type === 'tote')
+                    .filter((g) => normalizeBagType(g.bag_type) === 'tote')
                     .map((g) => g.bg_tracking_id);
 
                   const actualRowCount = Math.max(standardBagList.length, 1);
-                  const totalShipmentSum = standardBagList.reduce((sum, b) => sum + (b.items?.length || 0), 0);
+                  const totalShipmentSum = standardBagList.reduce((sum, b) => sum + (b.itemCount || 0), 0);
 
                   return (
                     <table
@@ -2431,7 +2507,7 @@ export default function BagSessionManager() {
                                   backgroundColor: '#FFFFFF',
                                 }}
                               >
-                                {bg ? bg.items.length : ''}
+                                {bg ? bg.itemCount : ''}
                               </td>
 
                               <td
@@ -2496,8 +2572,8 @@ export default function BagSessionManager() {
 
             <div className="px-4 py-2.5 bg-gray-100 border-t flex justify-between items-center">
               <span className="text-[11px] text-gray-600">
-                Standard Bags: <b>{(mailSessionTarget.bgGroups || []).filter(g => g.bag_type !== 'tote').length}</b> | 
-                Totes: <b>{(mailSessionTarget.bgGroups || []).filter(g => g.bag_type === 'tote').length}</b> | 
+                Standard Bags: <b>{(mailSessionTarget.bgGroups || []).filter((g) => normalizeBagType(g.bag_type) !== 'tote').length}</b> | 
+                Totes: <b>{(mailSessionTarget.bgGroups || []).filter((g) => normalizeBagType(g.bag_type) === 'tote').length}</b> | 
                 Shipments: <b>{mailSessionTarget.totalPackets || 0}</b>
               </span>
               <div className="flex gap-2">
