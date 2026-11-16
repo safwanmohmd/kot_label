@@ -16,6 +16,7 @@ import { DriveLinksManager } from '../pages/DriveLinksManager.jsx';
 import BagSessionManager from '../pages/BagSessionManager.jsx';
 import BulkTrackingSearch from '../pages/BulkTrackingSearch.jsx';
 import KotAutomationConsoleGenerator from '../pages/KotAutomationConsoleGenerator.jsx';
+import ExtensionLicenseManager from '../pages/ExtensionLicenseManager.jsx'; 
 
 import ShipmentAuditorSender from '../pages/ShipmentAuditorDispatcher.jsx';
 
@@ -40,7 +41,7 @@ export const APP_ROUTES = [
   { id: 'chromebook', label: 'Automation Console', path: '/chromebook', component: KotAutomationConsoleGenerator, inNav: true },
   { id: 'settings', label: 'Settings', path: '/settings', component: Settings, inNav: true },
   { id: 'find', label: 'Find ', path: '/find', component: ShipmentAuditorSender, inNav: true },
-  { id: 'lisence', label: 'Find ', path: '/lisence', component: ShipmentAuditorSender, inNav: true },
+  { id: 'lisence', label: 'Find ', path: '/lisence', component: ExtensionLicenseManager, inNav: true },
 ];
 
 // List used by Admin UI for toggling permissions (excludes sub-paths like /create/:id)
